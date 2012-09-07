@@ -1,0 +1,13 @@
+{application, gexf,
+ [
+  {description, ""},
+  {vsn, git},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+% {mod, { gexf_app, []}},
+% {registered, [gexf_sup]},
+  {env, []}
+ ]}.
