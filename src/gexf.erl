@@ -1,332 +1,85 @@
 -module(gexf).
--export([ parse_file/2
-        , compile_xsd/0
-        , write_hrl/0
-        , tree/0]).
 
--type schema_model() :: term().
--type xml_tree() :: term().
+-compile({parse_transform, sangria}).
 
--spec compile_xsd() -> {ok, Model} | {error, Reason} when
-    Model :: schema_model(),
-    Reason :: term().
-
-compile_xsd() ->
-    XsdDir = filename:join(code:priv_dir(gexf), "schema"),
-    XsdFilePath = filename:join(XsdDir, "gexf.xsd"),
-    Viz = file_config("http://www.gexf.net/1.2draft/viz", "viz", undefined),
-    erlsom:compile_xsd_file(XsdFilePath, [{include_files, [Viz]}, 
-                                          {include_dirs, [XsdDir]}]).
-
-write_hrl() ->
-    {ok, Model} = compile_xsd(),
-    erlsom:write_hrl(Model, code:lib_dir(gexf, src) ++ "/gexf.hrl").
-
-
-file_config(Namespace, Prefix, Path) ->
-    {Namespace, Prefix, Path}.
-
--spec parse_file(XsdModel, DataFileName) ->
-        {ok, Tree} | {error, Reason} when
-    DataFileName :: string(),
-    XsdModel :: schema_model(),
-    Tree :: xml_tree(),
-    Reason :: term().
-
-parse_file(XsdModel, DataFileName) ->
-    DataPath = filename:join([code:priv_dir(gexf), "data", DataFileName]),
-    erlsom:parse_file(DataPath, XsdModel).
+-define(LIFETIME_RECORDS, ['node-content', 'edge-content', 'graph-content']).
+-define(LABEL_RECORDS, ['node-content', 'edge-content']).
 
 
 -include_lib("gexf/src/gexf.hrl").
-tree() ->
-#'_document-gexf'{
-    anyAttribs =
-        [{{"schemaLocation",
-           "http://www.w3.org/2001/XMLSchema-instance"},
-          "http://www.gexf.net/1.2draft http://www.gexf.net/1.2draft/gexf.xsd"}],
-    version = "1.2",
-    graph =
-        #'graph-content'{
-            defaultedgetype = "directed",
-            choice =
-                [#'attributes-content'{
-                     class = "node",
-                     attribute =
-                         [#'attribute-content'{
-                              id = "0",title = "url",type = "string"},
-                          #'attribute-content'{
-                              id = "1",title = "indegree",type = "float"},
-                          #'attribute-content'{
-                              id = "2",title = "frog",type = "boolean",
-                              choice =
-                                  [#'attribute-content-default'{
-                                       default = "true"}]}]},
-                 #'graph-content/CH1'{
-                     choice =
-                         #'nodes-content'{
-                             node =
-                                 [#'node-content'{
-                                      id = "0",label = "Gephi",
-                                      choice =
-                                          [#'attvalues-content'{
-                                               attvalue =
-                                                   [#attvalue{
-                                                        for = "0",value = "http://gephi.org"},
-                                                    #attvalue{
-                                                        for = "1",value = "1"}]}]},
-                                  #'node-content'{
-                                      id = "1",label = "Webatlas",
-                                      choice =
-                                          [#'attvalues-content'{
-                                               attvalue =
-                                                   [#attvalue{
-                                                        for = "0",value = "http://webatlas.fr"
-                                                        },
-                                                    #attvalue{
-                                                        for = "1",value = "2"
-                                                        }]}]},
-                                  #'node-content'{
-                                      id = "2",label = "RTGI",
-                                      choice =
-                                          [#'attvalues-content'{
-                                               attvalue =
-                                                   [#attvalue{
-                                                        for = "0",value = "http://rtgi.fr"
-                                                        },
-                                                    #attvalue{
-                                                        for = "1",value = "1"
-                                                        }]}]},
-                                  #'node-content'{
-                                      id = "3",label = "BarabasiLab",
-                                      choice =
-                                          [#'attvalues-content'{
-                                               
-                                               attvalue =
-                                                   [#attvalue{
-                                                        for = "0",value = "http://barabasilab.com"
-                                                        },
-                                                    #attvalue{
-                                                        for = "1",value = "1"
-                                                        },
-                                                    #attvalue{
-                                                        for = "2",value = "false"
-                                                        }]}]}]}},
-                 #'graph-content/CH1'{
-                     choice =
-                         #'edges-content'{
-                             edge =
-                                 [#'edge-content'{
-                                      id = "0",
-                                      source = "0",
-                                      target = "1"},
-                                  #'edge-content'{
-                                      id = "1",
-                                      source = "0",
-                                      target = "2"},
-                                  #'edge-content'{
-                                      id = "2",
-                                      source = "1",
-                                      target = "0"},
-                                  #'edge-content'{
-                                      id = "3",
-                                      source = "2",
-                                      target = "1"},
-                                  #'edge-content'{
-                                      id = "4",
-                                      source = "0",
-                                      target = "3"}]}}]}}.
 
 
+-spec node(Id) -> 'node-content'() when
+    Id :: string().
+
+node(Id) ->
+    #'node-content'{id = Id}.
+
+-spec edge(Id, Source, Target) -> 'edge-content'() when
+    Id :: string(),
+    Source :: string(),
+    Target :: string().
+
+edge(Id, Source, Target) ->
+    #'edge-content'{id = Id, source = Source, target = Target}.
 
 
+%% ------------------------------------------------------------------
+%% Label
+%% ------------------------------------------------------------------
+
+%% @doc Add a label for a node or an edge.
+-spec set_label(Label, Record) -> Record when
+    Label :: string(),
+    Record :: record().
+
+set_label(Label, Record) -> 
+    with_any(?LABEL_RECORDS, Record#any{label = Label}).
 
 
+%% ------------------------------------------------------------------
+%% Graph
+%% ------------------------------------------------------------------
+
+-spec graph(Nodes, Edges) -> 'graph-content'() when
+    Nodes :: ['node-content'()],
+    Edges :: ['edge-content'()].
+
+graph(Nodes, Edges) ->
+    #'graph-content'{
+%%      defaultedgetype = "directed",
+%%      mode = "static",
+        choice = 
+            [#'graph-content/CH1'{
+                 choice = 
+                     #'nodes-content'{
+                         count = length(Nodes),
+                         node = Nodes}},
+             #'graph-content/CH1'{
+                 choice = 
+                     #'edges-content'{
+                         count = length(Edges),
+                         edge = Edges}}]}.
 
 
+%% ------------------------------------------------------------------
+%% Lifetime
+%% ------------------------------------------------------------------
+
+set_lifetime(Start, End, Record) ->
+    set_lifetime_end(End, set_lifetime_start(Start, Record)).
 
 
+set_lifetime_start({open, Start}, Record) ->
+    with_any(?LIFETIME_RECORDS, Record#any{startopen = Start});
+set_lifetime_start(Start, Record) ->
+    with_any(?LIFETIME_RECORDS, Record#any{start = Start}).
 
-basic() ->
-#'_document-gexf'{version = "1.2",
-    graph = 
-        #'graph-content'{
-            defaultedgetype = "directed",
-            mode = "static",
-            choice = 
-                [#'graph-content/CH1'{
-                     choice = 
-                         #'nodes-content'{
-                             node = 
-                                 [#'node-content'{id = "0",label = "Hello"},
-                                  #'node-content'{id = "1",label = "Word"}]}},
-                 #'graph-content/CH1'{
-                     anyAttribs = [],
-                     choice = 
-                         #'edges-content'{
-                             edge = 
-                                 [#'edge-content'{id = "0",source = "0",target = "1"}]}}]}}.
+set_lifetime_end({open, End}, Record) ->
+    with_any(?LIFETIME_RECORDS, Record#any{endopen = End});
+set_lifetime_end(End, Record) ->
+    with_any(?LIFETIME_RECORDS, Record#any{'end' = End}).
 
 
-
-dynamics() ->
-#'_document-gexf'{
-    anyAttribs =
-        [{{"schemaLocation",
-           "http://www.w3.org/2001/XMLSchema-instance"},
-          "http://www.gexf.net/1.2draft http://www.gexf.net/1.2draft/gexf.xsd"}],
-    version = "1.2",variant = undefined,
-    meta =
-        #'meta-content'{
-            anyAttribs = [],lastmodifieddate = "2009-03-20",
-            choice =
-                [#'meta-content-creator'{
-                     anyAttribs = [],creator = "Gexf.net"},
-                 #'meta-content-description'{
-                     anyAttribs = [],
-                     description = "A Web network changing over time"}]},
-    graph =
-        #'graph-content'{
-            anyAttribs = [],timeformat = "date",start = undefined,
-            startopen = undefined,'end' = undefined,endopen = undefined,
-            defaultedgetype = "directed",idtype = undefined,
-            mode = "dynamic",
-            choice =
-                [#'attributes-content'{
-                     anyAttribs = [],class = "node",mode = "static",
-                     start = undefined,startopen = undefined,'end' = undefined,
-                     endopen = undefined,
-                     attribute =
-                         [#'attribute-content'{
-                              anyAttribs = [],id = "0",title = "url",type = "string",
-                              choice = undefined},
-                          #'attribute-content'{
-                              anyAttribs = [],id = "1",title = "frog",type = "boolean",
-                              choice =
-                                  [#'attribute-content-default'{
-                                       anyAttribs = [],default = "true"}]}]},
-                 #'attributes-content'{
-                     anyAttribs = [],class = "node",mode = "dynamic",
-                     start = undefined,startopen = undefined,'end' = undefined,
-                     endopen = undefined,
-                     attribute =
-                         [#'attribute-content'{
-                              anyAttribs = [],id = "2",title = "indegree",type = "float",
-                              choice = undefined}]},
-                 #'graph-content/CH1'{
-                     anyAttribs = [],
-                     choice =
-                         #'nodes-content'{
-                             anyAttribs = [],count = undefined,
-                             node =
-                                 [#'node-content'{
-                                      anyAttribs = [],start = "2009-03-01",startopen = undefined,
-                                      'end' = undefined,endopen = undefined,pid = undefined,
-                                      id = "0",label = "Gephi",
-                                      choice =
-                                          [#'attvalues-content'{
-                                               anyAttribs = [],
-                                               attvalue =
-                                                   [#attvalue{
-                                                        anyAttribs = [],for = "0",value = "http://gephi.org",
-                                                        start = undefined,startopen = undefined,'end' = undefined,
-                                                        endopen = undefined},
-                                                    #attvalue{
-                                                        anyAttribs = [],for = "2",value = "1",start = undefined,
-                                                        startopen = undefined,'end' = undefined,
-                                                        endopen = undefined}]}]},
-                                  #'node-content'{
-                                      anyAttribs = [],start = undefined,startopen = undefined,
-                                      'end' = undefined,endopen = undefined,pid = undefined,
-                                      id = "1",label = "Network",
-                                      choice =
-                                          [#'attvalues-content'{
-                                               anyAttribs = [],
-                                               attvalue =
-                                                   [#attvalue{
-                                                        anyAttribs = [],for = "2",value = "1",start = undefined,
-                                                        startopen = undefined,'end' = "2009-03-01",
-                                                        endopen = undefined},
-                                                    #attvalue{
-                                                        anyAttribs = [],for = "2",value = "2",start = "2009-03-01",
-                                                        startopen = undefined,'end' = "2009-03-10",
-                                                        endopen = undefined},
-                                                    #attvalue{
-                                                        anyAttribs = [],for = "2",value = "1",start = "2009-03-10",
-                                                        startopen = undefined,'end' = undefined,
-                                                        endopen = undefined}]}]},
-                                  #'node-content'{
-                                      anyAttribs = [],start = undefined,startopen = undefined,
-                                      'end' = undefined,endopen = undefined,pid = undefined,
-                                      id = "2",label = "Visualization",
-                                      choice =
-                                          [#'attvalues-content'{
-                                               anyAttribs = [],
-                                               attvalue =
-                                                   [#attvalue{
-                                                        anyAttribs = [],for = "2",value = "0",start = undefined,
-                                                        startopen = undefined,'end' = "2009-03-01",
-                                                        endopen = undefined},
-                                                    #attvalue{
-                                                        anyAttribs = [],for = "2",value = "1",start = "2009-03-01",
-                                                        startopen = undefined,'end' = undefined,
-                                                        endopen = undefined}]},
-                                           #'spells-content'{
-                                               anyAttribs = [],
-                                               spell =
-                                                   [#spell{
-                                                        anyAttribs = [],start = undefined,startopen = undefined,
-                                                        'end' = "2009-03-01",endopen = undefined},
-                                                    #spell{
-                                                        anyAttribs = [],start = "2009-03-05",startopen = undefined,
-                                                        'end' = "2009-03-10",endopen = undefined}]}]},
-                                  #'node-content'{
-                                      anyAttribs = [],start = undefined,startopen = undefined,
-                                      'end' = undefined,endopen = undefined,pid = undefined,
-                                      id = "3",label = "Graph",
-                                      choice =
-                                          [#'attvalues-content'{
-                                               anyAttribs = [],
-                                               attvalue =
-                                                   [#attvalue{
-                                                        anyAttribs = [],for = "1",value = "false",start = undefined,
-                                                        startopen = undefined,'end' = undefined,endopen = undefined},
-                                                    #attvalue{
-                                                        anyAttribs = [],for = "2",value = "0",start = undefined,
-                                                        startopen = undefined,'end' = "2009-03-01",
-                                                        endopen = undefined},
-                                                    #attvalue{
-                                                        anyAttribs = [],for = "2",value = "1",start = "2009-03-01",
-                                                        startopen = undefined,'end' = undefined,
-                                                        endopen = undefined}]}]}]}},
-                 #'graph-content/CH1'{
-                     anyAttribs = [],
-                     choice =
-                         #'edges-content'{
-                             anyAttribs = [],count = undefined,
-                             edge =
-                                 [#'edge-content'{
-                                      anyAttribs = [],start = "2009-03-01",startopen = undefined,
-                                      'end' = undefined,endopen = undefined,id = "0",
-                                      type = undefined,label = undefined,source = "0",
-                                      target = "1",weight = undefined,choice = undefined},
-                                  #'edge-content'{
-                                      anyAttribs = [],start = "2009-03-01",startopen = undefined,
-                                      'end' = "2009-03-10",endopen = undefined,id = "1",
-                                      type = undefined,label = undefined,source = "0",
-                                      target = "2",weight = undefined,choice = undefined},
-                                  #'edge-content'{
-                                      anyAttribs = [],start = "2009-03-01",startopen = undefined,
-                                      'end' = undefined,endopen = undefined,id = "2",
-                                      type = undefined,label = undefined,source = "1",
-                                      target = "0",weight = undefined,choice = undefined},
-                                  #'edge-content'{
-                                      anyAttribs = [],start = undefined,startopen = undefined,
-                                      'end' = "2009-03-10",endopen = undefined,id = "3",
-                                      type = undefined,label = undefined,source = "2",
-                                      target = "1",weight = undefined,choice = undefined},
-                                  #'edge-content'{
-                                      anyAttribs = [],start = "2009-03-01",startopen = undefined,
-                                      'end' = undefined,endopen = undefined,id = "4",
-                                      type = undefined,label = undefined,source = "0",
-                                      target = "3",weight = undefined,choice = undefined}]}}]}}.
+open({open, Endpoint}) -> {open, Endpoint};
+open(Endpoint) -> {open, Endpoint}.
