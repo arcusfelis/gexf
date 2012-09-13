@@ -17,18 +17,28 @@
     {ok, Funs}  = xref:q(Xref, "V"),
     {ok, Calls} = xref:q(Xref, "E"),
     {ok, Mods}  = xref:q(Xref, "M"),
+    ModColor = gexf:color(255, 0, 0),
+    FunColor = gexf:color(0, 255, 0),
     Mod2Num  = enumerate(Mods),
     Fun2Num  = enumerate(Funs, length(Mods)+1),
     Call2Num = enumerate(Calls),
-    ModNodes = [module_node(Id, Mod) || {Mod, Id} <- Mod2Num],
-    FunNodes = [mfa_node(Id, MFA) || {MFA, Id} <- Fun2Num],
-    Nodes = ModNodes ++ FunNodes,
-    Fun2FunEdges = [call_edge(Fun2Num, Id, FromMFA, ToMFA) 
-                      || {{FromMFA, ToMFA}, Id} <- Call2Num],
-    Mod2FunEdges = [module_function_edge(Fun2Num, Mod2Num, Id, MFA) 
-                      || {MFA, Id} <- Fun2Num],
+    ModFunNodes = fun(Mod) ->
+        [gexf:add_color(FunColor, mfa_node(FunId, MFA)) 
+         || {MFA, FunId} <- Fun2Num, mfa_to_module(MFA) =:= Mod] end,
+    ModNodes = 
+        [gexf:set_nodes(ModFunNodes(Mod),
+                        gexf:add_color(ModColor, module_node(Id, Mod)))
+            || {Mod, Id} <- Mod2Num],
+    Fun2FunEdges = 
+        [gexf:set_weight(10, 
+                         call_edge(Fun2Num, Id, FromMFA, ToMFA))
+            || {{FromMFA, ToMFA}, Id} <- Call2Num],
+    Mod2FunEdges = 
+        [gexf:set_weight(5, 
+                         module_function_edge(Fun2Num, Mod2Num, Id, MFA))
+            || {MFA, Id} <- Fun2Num],
     Edges = Fun2FunEdges ++ Mod2FunEdges,
-    gexf:document(gexf:graph(Nodes, Edges)).
+    gexf:document_viz(gexf:graph(ModNodes, Edges)).
 
 mfa_to_module({M, _F, _A}) -> M.
 
