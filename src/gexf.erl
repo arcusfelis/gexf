@@ -10,12 +10,23 @@
 
 %% Vizualization
 -export([color/3,
-         add_color/2]).
+         add_color/2,
+         size/1,
+         add_size/2,
+         position/3,
+         add_position/2]).
+
+%% Position helpers
+-export([relative_position/2,
+         scale_position/2,
+         update_position/2,
+         rotate_position/2]).
 
 %% IO
 -export([to_string/1]).
 
 -compile({parse_transform, cut}).
+-compile({parse_transform, chacha}).
 -type elem() :: {atom(), orddict:orddict(), iolist()}.
 
 
@@ -71,7 +82,6 @@ set_weight(Weight, Record) ->
 %% Color
 %% ------------------------------------------------------------------
 
-
 color(R, G, B) -> 
     Attrs = orddict:from_list([attr(r, R), 
                                attr(g, G), 
@@ -86,6 +96,86 @@ color(R, G, B) ->
 
 add_color(Color, Elem) ->
     add_sub_elem(Color, Elem).
+
+
+%% ------------------------------------------------------------------
+%% Position
+%% ------------------------------------------------------------------
+
+position(X, Y, Z) -> 
+    Attrs = orddict:from_list([attr(x, write_number(X)), 
+                               attr(y, write_number(Y)), 
+                               attr(z, write_number(Z))]),
+    elem('viz:position',  Attrs, "").
+
+
+%% @doc Add a position for a node.
+-spec add_position(Pos, Elem) -> Elem when
+    Pos :: elem(),
+    Elem :: elem().
+
+add_position(Pos, Elem) ->
+    add_sub_elem(Pos, Elem).
+
+
+relative_position(BasePos, NodePos) ->
+    X = read_number(get_attribute(x, BasePos)),
+    Y = read_number(get_attribute(y, BasePos)),
+    Z = read_number(get_attribute(z, BasePos)),
+    chain(update_attribute(x, number_id(_ + X)), 
+          update_attribute(y, number_id(_ + Y)), 
+          update_attribute(z, number_id(_ + Z)) -- NodePos).
+
+
+scale_position(Factor, NodePos) ->
+    F = number_id(_ * Factor),
+    chain(update_attribute(x, F), 
+          update_attribute(y, F), 
+          update_attribute(z, F) -- NodePos).
+
+
+update_position(F, NodePos) when is_function(F, 3) ->
+    X = read_number(get_attribute(x, NodePos)),
+    Y = read_number(get_attribute(y, NodePos)),
+    Z = read_number(get_attribute(z, NodePos)),
+    {NewX, NewY, NewZ} = F(X, Y, Z),
+    chain(set_attribute(x, write_number(NewX)), 
+          set_attribute(y, write_number(NewY)), 
+          set_attribute(z, write_number(NewZ)) -- NodePos).
+
+
+%% @doc Move a point around a circle based on the circle's rotation.
+%%
+%% If you rotate point (px, py) around point (ox, oy) by angle theta you'll get:
+%% p'x = cos(theta) * (px-ox) - sin(theta) * (py-oy) + ox
+%% p'y = sin(theta) * (px-ox) + cos(theta) * (py-oy) + oy
+rotate_position(A, Pos) ->
+    F = fun(X, Y, Z) ->
+            Sin = math:sin(A),
+            Cos = math:cos(A),
+            DeltaX = Cos * X - Sin * Y,
+            DeltaY = Cos * Y + Sin * X,
+            {DeltaX, DeltaY, Z}
+        end,
+    gexf:update_position(F, Pos).
+
+
+%% ------------------------------------------------------------------
+%% Size
+%% ------------------------------------------------------------------
+
+size(Size) -> 
+    elem('viz:size', [attr(value, Size)], "").
+
+
+%% @doc Add a size for a node.
+-spec add_size(Size, Elem) -> Elem when
+    Size :: elem(),
+    Elem :: elem().
+
+add_size(Size, Elem) ->
+    add_sub_elem(Size, Elem).
+
     
 %% ------------------------------------------------------------------
 %% Graph
@@ -100,8 +190,8 @@ graph(Nodes, Edges) ->
     elem(graph,
             [ attr(defaultedgetype, "directed")
             , attr(mode, "static")],
-            [ elem(edges, [attr(count, length(Edges))], Edges)
-            , elem(nodes, [attr(count, length(Nodes))], Nodes)]).
+            [ elem(nodes, [attr(count, length(Nodes))], Nodes)
+            , elem(edges, [attr(count, length(Edges))], Edges)]).
 
 
 %% ------------------------------------------------------------------
@@ -139,6 +229,7 @@ document_viz(Graph) ->
     NS = "http://www.gexf.net/1.1draft/viz",
     set_attribute('xmlns:viz', NS, document(Graph)).
 
+
 %% ------------------------------------------------------------------
 %% Helpers
 %% ------------------------------------------------------------------
@@ -146,6 +237,16 @@ document_viz(Graph) ->
 set_attribute(Key, Value, Elem) ->
     %% Use cut.
     with_attributes(orddict:store(Key, Value, _), Elem).
+
+
+get_attribute(Key, {_Tag, Attrs, _Value}) ->
+    %% Use cut.
+    orddict:fetch(Key, Attrs).
+
+
+update_attribute(Key, Fun, Elem) ->
+    %% Use cut.
+    with_attributes(orddict:update(Key, Fun, _), Elem).
 
 with_attributes(Fun, {Tag, Attrs, Value}) ->
     {Tag, Fun(Attrs), Value}.
@@ -182,6 +283,19 @@ fix_attributes(Attrs) -> Attrs.
 
 attr(Key, Value) -> {Key, Value}.
 
+number_id(F) -> 
+    chain(write_number, F, read_number).
+
+read_number(X) when is_list(X) -> 
+    try list_to_integer(X) catch error:badarg -> list_to_float(X) end;
+read_number(X) when is_number(X) -> 
+    X.
+
+write_number(X) when is_list(X)    -> X;
+write_number(X) when is_integer(X) -> X;
+write_number(X) when is_float(X)   -> float_to_string(X).
+
+float_to_string(X) -> mochinum:digits(X).
 
 %% ------------------------------------------------------------------
 %% IO
@@ -189,3 +303,4 @@ attr(Key, Value) -> {Key, Value}.
 
 to_string(Doc) ->
     xmerl:export_simple([Doc], xmerl_xml, []).
+
