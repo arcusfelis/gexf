@@ -1,3 +1,5 @@
+%%% @doc This module generates a set of uniform points around an ellipse.
+%%% @end
 -module(ellipint).
 -export([ellipint/1, circumference/2, eccentricity/2, ellipint/3, arc_length/4,
          arc_length_to_angle/6, point_generator/3, circumferenceE/2]).
@@ -7,7 +9,7 @@
 -endif.
 
 
-%% Complete elliptic integral of the second kind.
+%% @doc Complete elliptic integral of the second kind.
 %% http://www.exstrom.com/math/elliptic/ellipint.html
 %% The length of the arc from 0 to Pi/2 of the ellipse with the eccentricity K.
 ellipint(K) ->
@@ -24,19 +26,22 @@ g(X) ->
       + P(14)   * 669451/ 67108864.
 
 
-%% focal distance (c).
+%% @doc This function calculates the focal distance (c).
 %% http://mysite.du.edu/~jcalvert/math/ellarc.htm
+%% A is a major axis, B is a minor axis.
 focal_distance(A, B) when A >= B ->
     math:sqrt(A*A - B*B).
 
 
-%% e = c/a, and 0 ≤ e ≤ 1.
+%% @doc e = c/a, and 0 ≤ e ≤ 1.
 %% http://en.wikipedia.org/wiki/Eccentricity_%28mathematics%29
+%% A is a major axis, B is a minor axis.
 eccentricity(A, B) ->
     focal_distance(A, B) / A.
 
 
-%% The total arc length (perimeter) of the ellipse (C).
+%% @doc The total arc length (perimeter) of the ellipse (C).
+%% A is a major axis, B is a minor axis.
 circumference(A, B) ->
     E = eccentricity(A, B),
     4 * A * ellipint(E).
@@ -61,10 +66,23 @@ arc_length(T, K, A, N) ->
 %   io:format("T: ~p, K: ~p, A: ~p, N: ~p~n", [T, K, A, N]),
     HalfPi = math:pi() / 2,
     %% From 0. How many quaters are skipped.
-    QuaterCount = trunc(T / HalfPi),
+    QuarterCount = trunc(T / HalfPi),
     %% From 0: 0, 1, 2, 3.
-    QuaterNum = QuaterCount rem 4,
-    (QuaterNum * ellipint(K) + ellipint(T - QuaterCount * HalfPi, K, N)) * A.
+    QuarterNum = QuarterCount rem 4,
+    AngleRem = T - QuarterCount * HalfPi,
+    AngleCalc = case QuarterNum rem 2 of
+            0 -> HalfPi - AngleRem;
+            1 -> AngleRem
+        end,
+    true = 0 =< AngleRem,
+    true = 0 =< AngleCalc,
+    ArcLen = ellipint(AngleCalc, K, N),
+    QuarterLen = ellipint(K),
+    ArcLenCalc = case QuarterNum rem 2 of
+            0 -> QuarterLen - ArcLen;
+            1 -> ArcLen
+        end,
+    (QuarterNum * QuarterLen + ArcLenCalc) * A.
 
 
 %% A = 0, X = 0.
@@ -82,12 +100,18 @@ arc_length_to_angle(X, K, A, N, StepCount, Delta) ->
     find_parameter(F, 0, math:pi() * 2, X, StepCount, Delta). 
 
 
+
+%% @doc Make a minumum X, that represents the same point on the circle.
+%% X is an arc's length.
+%% C is a perimeter (circumference).
 simple_arc_length(X, C) ->
     %% Float remain.
     FullWiseCount = trunc(X / C),
     X - FullWiseCount * C.
 
 
+%% @doc Same as simple_arc_length/3, different parameters.
+%% A is a major axis, B is a minor axis.
 simple_arc_length(X, A, B) ->
     C = circumference(A, B),
     simple_arc_length(X, C).
@@ -123,6 +147,7 @@ find_parameter(F, From, To, ExpectedValue, StepCount, Delta) ->
 %% TT is tan(T).
 %%
 %% Change M from 1 to K.
+%% A part of the formula.
 sigma_m(TT, K, M, N, A) when M =< N ->
     ThetaM = theta_m(M, N),
     RhoM = rho_m(K, ThetaM),
@@ -133,22 +158,27 @@ sigma_m(_TT, _K, _M, _N, A) ->
     A.
     
 
+%% A part of the formula.
 theta_m(M, N) ->
     X = 2*N + 1,
     M * math:pi() / X.
 
 
+%% A part of the formula.
 rho_m(K, ThetaM) ->
     X = 1 - math:pow(K * math:cos(ThetaM), 2),
     math:sqrt(X).
 
+
+%% @doc Generates N random points for an ellipse inside the ellipse,
+%% parametered by (A cos t, B sin t).
 point_generator(A, B, N) ->
     TotalArcLen = circumference(A, B),
     ArcLen = TotalArcLen / N,
     fun(X) when 1 =< X, X =< N ->
             P = (X - 1) * ArcLen,
             K =  eccentricity(A, B),
-            Angle = arc_length_to_angle(P, K, A, 100, 100, 0.001),
+            Angle = arc_length_to_angle(P, K, A, 100, 100, 0.0001),
             {A*math:cos(Angle), B*math:sin(Angle)}
         end.
 
@@ -181,7 +211,8 @@ prop_arc_length() ->
             E = eccentricity(A, B),
             AL1 = arc_length(math:pi() / 2, E, A, 100),
             AL2 = arc_length(math:pi(), E, A, 100),
-            equals(true, compare_or_error(AL1, AL2 / 2))
+            %% Delta is AL1 / 50.
+            equals(true, compare_or_error(AL1, AL2 / 2, AL1 / 50))
         end).
 
 

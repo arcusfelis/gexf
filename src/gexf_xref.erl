@@ -299,7 +299,7 @@ get_function_circle_position(PointCount) ->
 
 
 get_module_circle_position(PointCount) ->
-    Gen = ellipint:point_generator(1.5, 1, PointCount),
+    Gen = ellipint:point_generator(2, 1, PointCount),
     fun(Num) ->
         {X, Y} = Gen(Num),
         gexf:position(X, Y, 0)
