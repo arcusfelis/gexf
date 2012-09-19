@@ -299,10 +299,10 @@ get_function_circle_position(PointCount) ->
 
 
 get_module_circle_position(PointCount) ->
-    ZoomX = fun(X, Y, Z) -> {X * 1.5, Y, Z} end,
-    F = get_sparse_circle_position(PointCount, -45),
+    Gen = ellipint:point_generator(1.5, 1, PointCount),
     fun(Num) ->
-        gexf:update_position(ZoomX, F(Num))
+        {X, Y} = Gen(Num),
+        gexf:position(X, Y, 0)
         end.
 
 
@@ -470,3 +470,7 @@ key_than_value_sort_test_() ->
     [?_assertEqual(key_than_value_sort(fun(X) -> X rem 2 end, [1,2,4,5,3]), [2,4,1,3,5])].
 
 -endif.
+
+
+
+
