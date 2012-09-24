@@ -1,5 +1,5 @@
 -module(gexf_xref).
--export(['e-v'/1]).
+%-export(['e-v'/1]).
 -export(['e-v-m'/1]).
 -compile({parse_transform, mead}).
 -compile({parse_transform, cut}).
@@ -12,15 +12,15 @@
 -define(check(X), X).
 
 
-'e-v'(Xref) ->
-    {ok, Funs}  = xref:q(Xref, "V"),
-    {ok, Calls} = xref:q(Xref, "E"),
-    Fun2Num  = enumerate(Funs),
-    Call2Num = enumerate(Calls),
-    Nodes = [mfa_node(Id, MFA) || {MFA, Id} <- Fun2Num],
-    Edges = [call_edge(Fun2Num, Id, FromMFA, ToMFA) 
-                || {{FromMFA, ToMFA}, Id} <- Call2Num],
-    gexf:document(gexf:graph(Nodes, Edges)).
+%'e-v'(Xref) ->
+%    {ok, Funs}  = xref:q(Xref, "V"),
+%    {ok, Calls} = xref:q(Xref, "E"),
+%    Fun2Num  = enumerate(Funs),
+%    Call2Num = enumerate(Calls),
+%    Nodes = [mfa_node(Id, MFA) || {MFA, Id} <- Fun2Num],
+%    Edges = [call_edge(Fun2Num, Id, FromMFA, ToMFA) 
+%                || {{FromMFA, ToMFA}, Id} <- Call2Num],
+%    gexf:document(gexf:graph(Nodes, Edges)).
 
 module_colors(Mods) ->
     crypto:rand_bytes(length(Mods) * 3).
@@ -192,30 +192,41 @@ union(D1, D2) ->
     ?check(?assertEqual(length(SmallModGroups), length(SmallModNodes))),
 
     Nodes = LargeModNodes ++ lists:flatten(SmallModNodes) ++ lists:flatten(FunNodes),
-    Call2Num = element(1, enumerate(Calls)),
+    {Call2Num, Next@} = enumerate(Calls),
+    {MF2Num, _Next}   = enumerate(XConFuns ++ LConFuns, Next@),
     Fun2FunEdges = 
         [call_edge(Fun2Num, Id, FromMFA, ToMFA)
             || {{FromMFA, ToMFA}, Id} <- Call2Num],
-%   Mod2FunEdges = 
-%       [gexf:set_weight(5, 
-%                        module_function_edge(Fun2Num, Mod2Num, Id, MFA))
-%           || {MFA, Id} <- Fun2Num],
-    Edges = Fun2FunEdges, % ++ Mod2FunEdges,
-    gexf:document_viz(gexf:graph(Nodes, Edges)).
+    Mod2FunEdges = 
+        [module_function_edge(Fun2Num, Mod2Num, Id, MFA)
+            || {MFA, Id} <- MF2Num],
+    Edges = Fun2FunEdges ++ Mod2FunEdges,
+
+    NAttrs = [gexf:attribute_metadata(0, "node_type", "string")],
+    EAttrs = [gexf:attribute_metadata(0, "edge_type", "string")],
+    chain(gexf:document_viz,
+          gexf:add_attribute_metadata(node, NAttrs),
+          gexf:add_attribute_metadata(edge, EAttrs)
+          -- gexf:graph(Nodes, Edges)).
 
 
 mfa_to_module({M, _F, _A}) -> M.
 
 mfa_node(Id, MFA) ->
-    gexf:set_label(mfa_to_string(MFA), gexf:node(Id)).
+    chain(gexf:add_attribute_value(0, mfa),
+          gexf:set_label(mfa_to_string(MFA))
+          -- gexf:node(Id)).
 
 module_node(Id, Mod) ->
-    gexf:set_label(module_to_string(Mod), gexf:node(Id)).
+    chain(gexf:add_attribute_value(0, module),
+          gexf:set_label(module_to_string(Mod))
+          -- gexf:node(Id)).
 
 module_function_edge(Fun2Num, Mod2Num, Id, MFA) ->
     MFA2Id = orddict:fetch(_, Fun2Num),
     Mod2Id = orddict:fetch(_, Mod2Num),
-    gexf:edge(Id, MFA2Id(MFA), Mod2Id(mfa_to_module(MFA))).
+    chain(gexf:add_attribute_value(0, mf)
+      -- gexf:edge(Id, MFA2Id(MFA), Mod2Id(mfa_to_module(MFA)))).
     
 module_id(Mod2Num, Module) ->
     orddict:fetch(Module, Mod2Num).
@@ -299,7 +310,7 @@ get_function_circle_position(PointCount) ->
 
 
 get_module_circle_position(PointCount) ->
-    Gen = ellipint:point_generator(2, 1, PointCount),
+    Gen = ellipint:cached_point_generator(1.6, 1, PointCount),
     fun(Num) ->
         {X, Y} = Gen(Num),
         gexf:position(X, Y, 0)

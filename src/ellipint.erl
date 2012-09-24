@@ -1,8 +1,20 @@
 %%% @doc This module generates a set of uniform points around an ellipse.
 %%% @end
 -module(ellipint).
--export([ellipint/1, circumference/2, eccentricity/2, ellipint/3, arc_length/4,
-         arc_length_to_angle/6, point_generator/3, circumferenceE/2]).
+-export([ellipint/1, 
+         ellipint/3, 
+
+         arc_length/4,
+         arc_length_to_angle/6, 
+
+         circumferenceE/2,
+         circumference/2, 
+
+         eccentricity/2, 
+
+         point_generator/3,
+         cached_point_generator/3]).
+
 -ifdef(TEST).
 -include_lib("proper/include/proper.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -183,6 +195,12 @@ point_generator(A, B, N) ->
         end.
 
 
+cached_point_generator(A, B, N) ->
+    F = point_generator(A, B, N),
+    T = list_to_tuple(lists:map(F, lists:seq(1, N))),
+    fun(X) -> element(X, T) end.
+
+
 
 -ifdef(TEST).
 
@@ -238,40 +256,40 @@ run_property_testing_test() ->
     Res = proper:module(?MODULE, [{constraint_tries, 500}]),
     erlang:group_leader(EunitLeader, self()),
     ?assertEqual([], Res).
-%
-%
-%
-%prop_find_parameter() ->
-%    ?FORALL({List, {ValueBorder1, ValueBorder2}},
-%            {[float(), float(), float()], {float(), float()}},
-%        begin
-%            [From, Par, To] = lists:sort(List),
-%            {ValueFrom, ValueTo} = sort(ValueBorder1, ValueBorder2),
-%            true = ValueFrom =< ValueTo,
-%            true = From =< To,
-%            ValRange = ValueTo - ValueFrom,
-%            ParRange = To - From,
-%            true = 0 =< ValRange,
-%            true = 0 =< ParRange,
-%            %% Linear function.
-%            F = fun(X) when From =< X, X =< To ->
-%                ParPos = X - From, 
-%                true = 0 =< ParPos,
-%                true = ParPos =< ParRange,
-%                %% ValPos      ParPos
-%                %% -------- =  ------
-%                %% ValRange    ParRange
-%                ValPos = ValRange * ParPos / ParRange,
-%                ValPos + ValueFrom
-%                end,
-%            ExpectedValue = F(Par),
-%            true = F(From) =< F(To),
-%            true = ExpectedValue =< ValueTo,
-%            true = ExpectedValue >= ValueFrom,
-%            FoundedPar = find_parameter(F, From, To, ExpectedValue, 1000, 0),
-%            io:format(user, "~nPar: ~p FounedPar: ~p~n", [Par, FoundedPar]),
-%            equals(true, compare_or_error(FoundedPar, Par))
-%        end).
+
+
+
+prop_find_parameter() ->
+    ?FORALL({List, {ValueBorder1, ValueBorder2}},
+            {[float(), float(), float()], {float(), float()}},
+        begin
+            [From, Par, To] = lists:sort(List),
+            {ValueFrom, ValueTo} = sort(ValueBorder1, ValueBorder2),
+            true = ValueFrom =< ValueTo,
+            true = From =< To,
+            ValRange = ValueTo - ValueFrom,
+            ParRange = To - From,
+            true = 0 =< ValRange,
+            true = 0 =< ParRange,
+            %% Linear function.
+            F = fun(X) when From =< X, X =< To ->
+                ParPos = X - From, 
+                true = 0 =< ParPos,
+                true = ParPos =< ParRange,
+                %% ValPos      ParPos
+                %% -------- =  ------
+                %% ValRange    ParRange
+                ValPos = ValRange * ParPos / ParRange,
+                ValPos + ValueFrom
+                end,
+            ExpectedValue = F(Par),
+            true = F(From) =< F(To),
+            true = ExpectedValue =< ValueTo,
+            true = ExpectedValue >= ValueFrom,
+            FoundedPar = find_parameter(F, From, To, ExpectedValue, 1000, 0),
+%           io:format(user, "~nPar: ~p FounedPar: ~p~n", [Par, FoundedPar]),
+            equals(true, compare_or_error(FoundedPar, Par))
+        end).
 
 
 sort(X, Y) when X =< Y -> {X, Y};

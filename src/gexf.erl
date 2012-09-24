@@ -8,6 +8,13 @@
          document_viz/1,
          graph/2]).
 
+%% Data
+-export([add_attribute_value/3]).
+
+%% Metadata
+-export([add_attribute_metadata/3,
+         attribute_metadata/3]).
+
 %% Vizualization
 -export([color/3,
          add_color/2,
@@ -194,6 +201,20 @@ graph(Nodes, Edges) ->
             , elem(edges, [attr(count, length(Edges))], Edges)]).
 
 
+-spec add_attribute_metadata(Class, Attrs, Graph) -> Graph when
+    Attrs :: [elem()],
+    Graph :: elem(),
+    Class :: node | edge.
+
+add_attribute_metadata(Class, Attrs, GraphElem) ->
+    Elem = elem(attributes, [attr(class, Class)], Attrs),
+    add_sub_elem(Elem, GraphElem).
+
+
+attribute_metadata(Id, Title, Type) ->
+    elem(attribute, [attr(id, Id), attr(title, Title), attr(type, Type)], "").
+
+
 %% ------------------------------------------------------------------
 %% Lifetime
 %% ------------------------------------------------------------------
@@ -248,6 +269,13 @@ update_attribute(Key, Fun, Elem) ->
     %% Use cut.
     with_attributes(orddict:update(Key, Fun, _), Elem).
 
+%% @doc Call `Fun(Value)', if the `{Key, Value}' pair exists as an attribute.
+%% If the `Key' does not exist, then `Fun(undefined)' will be called.
+with_attribute(Key, Fun, Elem) ->
+    %% Use cut.
+    with_attributes(orddict:update(Key, Fun, undefined, _), Elem).
+
+
 with_attributes(Fun, {Tag, Attrs, Value}) ->
     {Tag, Fun(Attrs), Value}.
 
@@ -263,6 +291,9 @@ add_sub_elems(SubElems, {Tag, Attrs, Value}) ->
 set_sub_elem(SubElem, Elem) ->
     with_value(set_elem(Elem, _), Elem).
 
+with_sub_elem(Tag, Fun, Elem) ->
+    with_value(with_elem(Tag, Fun, _), Elem).
+
 
 %% @doc Add an element `Elem' or replace one with same tag. 
 %% Returns `Elems' with stored `Elem'.
@@ -272,6 +303,23 @@ set_sub_elem(SubElem, Elem) ->
 set_elem(E, []) ->                            [E];
 set_elem({Tag, _, _} = E, [{Tag, _, _}|T]) -> [E|T];
 set_elem(E, [H|T]) ->                         [H|set_elem(E, T)].
+
+
+%% @doc Run `Fun(Elem)', if an element with `Tag' exists. 
+%%      Otherwise, run `Fun(undefined)'.
+%%
+%%      `Fun' returns an element, that will be stored inside the
+%%      modified version of `Elems'. 
+%%
+%%      This function returns the updated version of `Elems'.
+-spec with_elem(Tag, Fun, Elems) -> Elems when
+    Tag :: atom(),
+    Elems :: [Elem],
+    Elem :: elem(),
+    Fun :: fun((undefined | Elem) -> Elem).
+with_elem(_Tag, Fun, []) ->                         [Fun(undefined)];
+with_elem(Tag, Fun, [{Tag, _, _}=H|T]) ->           [Fun(H)|T];
+with_elem(Tag, Fun, [H|T]) ->                       [H|with_elem(Tag, Fun, T)].
 
 
 elem_tag({Tag, _, _}) -> Tag.
@@ -303,4 +351,32 @@ float_to_string(X) -> mochinum:digits(X).
 
 to_string(Doc) ->
     xmerl:export_simple([Doc], xmerl_xml, []).
+
+
+%% ------------------------------------------------------------------
+%% Data
+%% ------------------------------------------------------------------
+
+%% Create:
+%%
+%% ```
+%%  <attvalues>                                       
+%%    <attvalue for="0" value="http://gephi.org"/>  
+%%    <attvalue for="1" value="1"/>                 
+%%  </attvalues>
+%% '''
+add_attribute_value(Key, Value, Elem) ->
+    %% OldAttValues is
+    %% <attvalue for="0" value="http://gephi.org"/>
+    %% <attvalue for="1" value="1"/>
+    Fun = fun(OldAttValues) -> 
+            AttValue = elem(attvalue, [attr(for, Key), attr(value, Value)], ""),
+            case OldAttValues of
+                undefined ->
+                    elem(attvalues, [], [AttValue]);
+                _Elem ->
+                    add_sub_elem(AttValue, OldAttValues)
+            end
+        end,
+    with_sub_elem(attvalues, Fun, Elem).
 
