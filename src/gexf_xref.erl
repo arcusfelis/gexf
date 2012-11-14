@@ -23,7 +23,14 @@
 %    gexf:document(gexf:graph(Nodes, Edges)).
 
 module_colors(Mods) ->
-    crypto:rand_bytes(length(Mods) * 3).
+%   crypto:rand_bytes(length(Mods) * 3).
+    RGBs =
+    %% Get a hash of length 3 of each module name.
+    [binary:part(crypto:md5(unicode:characters_to_binary(module_to_string(Mod))), 0, 3)
+     || Mod <- Mods],
+    %% Join all RGBs together.
+    iolist_to_binary(RGBs).
+
 
 module_color(Colors, ModId) ->
     %% First ModId = 1, Skip = 0
@@ -44,7 +51,22 @@ union(D1, D2) ->
     {ok, XFuns}  = xref:q(Xref, "X"),
     {ok, LFuns}  = xref:q(Xref, "L"),
     {ok, Calls}  = xref:q(Xref, "XC|||(X+L)|||AM"),
-    {ok, Mods}   = xref:q(Xref, "AM"),
+    {ok, Mods}   = xref:q(Xref, "AM"), %% Mods :: [atom()]
+
+    %% ME: Module Edges. All module calls.
+    %% AM: Analyzed Modules.
+    %% ME ||| AM: Analyzed modules calls.
+    {ok, AME}    = xref:q(Xref, "ME ||| AM"),
+
+    %% AME contains:
+    %% {etorrent,etorrent},
+    %% {etorrent,etorrent_app},
+    %% {etorrent,etorrent_ctl},
+    %% {etorrent,etorrent_peer_states},
+    %% {etorrent,etorrent_query},
+    %%
+    %% AME stands for "Analyzed Module Edges".
+    AME1         = filter_id_pairs(AME),
 
     %% Connected functions are called from outside or calls something outside.
     ConFuns = lists:usort(lists:flatmap(fun tuple_to_list/1, Calls)),
@@ -171,6 +193,7 @@ union(D1, D2) ->
 
     TinyClusterNum2Mod = lists:sort(swap_pairs(TinyMod2ClusterNum)),
     SmallModGroups = tuple_e1_key_e2_value_groups(TinyClusterNum2Mod),
+    %% Render small modules.
     SmallModNodes = 
        [begin
             ModPos = get_function_circle_position(length(ModGroup)),
@@ -193,14 +216,18 @@ union(D1, D2) ->
 
     Nodes = LargeModNodes ++ lists:flatten(SmallModNodes) ++ lists:flatten(FunNodes),
     {Call2Num, Next@} = enumerate(Calls),
-    {MF2Num, _Next}   = enumerate(XConFuns ++ LConFuns, Next@),
+    {MF2Num, Next@}   = enumerate(XConFuns ++ LConFuns, Next@),
+    {MM2Num, _Next}   = enumerate(AME1, Next@),
     Fun2FunEdges = 
         [call_edge(Fun2Num, Id, FromMFA, ToMFA)
             || {{FromMFA, ToMFA}, Id} <- Call2Num],
     Mod2FunEdges = 
         [module_function_edge(Fun2Num, Mod2Num, Id, MFA)
             || {MFA, Id} <- MF2Num],
-    Edges = Fun2FunEdges ++ Mod2FunEdges,
+    Mod2ModEdges = 
+        [module_module_edge(Mod2Num, M1, M2, Id)
+            || {{M1, M2}, Id} <- MM2Num],
+    Edges = Fun2FunEdges ++ Mod2FunEdges ++ Mod2ModEdges,
 
     NAttrs = [gexf:attribute_metadata(0, "node_type", "string")],
     EAttrs = [gexf:attribute_metadata(0, "edge_type", "string")],
@@ -228,6 +255,12 @@ module_function_edge(Fun2Num, Mod2Num, Id, MFA) ->
     chain(gexf:add_attribute_value(0, mf)
       -- gexf:edge(Id, MFA2Id(MFA), Mod2Id(mfa_to_module(MFA)))).
     
+module_module_edge(Mod2Num, M1, M2, Id) ->
+    Mod2Id = orddict:fetch(_, Mod2Num),
+    chain(gexf:add_attribute_value(0, mm)
+      -- gexf:edge(Id, Mod2Id(M1), Mod2Id(M2))).
+
+
 module_id(Mod2Num, Module) ->
     orddict:fetch(Module, Mod2Num).
 
@@ -378,7 +411,9 @@ move_tiny_modules_out(FunCountByMods) ->
     TotalCount = total_function_count(FunCountByMods),
     MCount = length(FunCountByMods),
     AvgFCount = TotalCount / MCount,
-    LimitFCount = round(AvgFCount / 3),
+    AvgFLimit = round(AvgFCount / 3),
+    %% Different algorithm for large applications.
+    LimitFCount = if MCount > 30 -> max(MCount div 10, AvgFLimit); true -> AvgFLimit end,
     {Large, Tiny} = 
         lists:partition(fun({_M, C}) -> C > LimitFCount end, FunCountByMods),
     TinyTotalCount = total_function_count(Tiny),
@@ -485,3 +520,5 @@ key_than_value_sort_test_() ->
 
 
 
+filter_id_pairs(XYs) ->
+    [XY || XY = {X, Y} <- XYs, X =/= Y].
