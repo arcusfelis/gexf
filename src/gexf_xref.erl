@@ -1,6 +1,6 @@
 -module(gexf_xref).
 %-export(['e-v'/1]).
--export(['e-v-m'/1]).
+-export(['e-v-m'/2]).
 -compile({parse_transform, mead}).
 -compile({parse_transform, cut}).
 -compile({parse_transform, chacha}).
@@ -10,6 +10,14 @@
 
 %-define(check(X), ok).
 -define(check(X), X).
+
+-define(NODE_TYPE_ATTR_ID, 0).
+-define(EDGE_TYPE_ATTR_ID, 0).
+
+-define(NODE_TITLE_ATTR_ID, 1).
+-define(EDGE_TITLE_ATTR_ID, 1).
+
+-define(NODE_LINE_NUM_ATTR_ID, 2).
 
 
 %'e-v'(Xref) ->
@@ -44,9 +52,9 @@ brighter_colors(Mask, Colors) ->
 
 
 union(D1, D2) -> 
-    orddict:merge(fun(K, X, _Y) -> X end, D1, D2).
+    orddict:merge(fun(_K, X, _Y) -> X end, D1, D2).
 
-'e-v-m'(Xref) ->
+'e-v-m'(Xref, Info) ->
     %% Returned values were already sorted and they are unique.
     {ok, XFuns}  = xref:q(Xref, "X"),
     {ok, LFuns}  = xref:q(Xref, "L"),
@@ -169,7 +177,7 @@ union(D1, D2) ->
                  FunPos -- FunNumInCluster)),
            gexf:add_size(NodeSizeValue),
            gexf:add_color(FunColor(MFA)),
-           mfa_node(FunId) -- MFA)
+           mfa_node(Info, FunId) -- MFA)
            end,
         countermap(WithFuns, Funs)
      end
@@ -186,7 +194,7 @@ union(D1, D2) ->
             chain(gexf:add_position(ClusterPos(ClusterId)), 
                   gexf:add_size(gexf:size(15)),
                   gexf:add_color(module_color(ModColors, Id))
-                  -- module_node(Id, Mod))
+                  -- module_node(Info, Id, Mod))
         end || Mod <- LargeMods],
 
     ?check(?assertEqual(length(LargeModNodes), length(LargeMods))),
@@ -207,7 +215,7 @@ union(D1, D2) ->
                      ModPos -- Mod2NumInGroup)),
                    gexf:add_size(gexf:size(8)),
                    gexf:add_color(module_color(ModColors, Id))
-                   -- module_node(Id, Mod))
+                   -- module_node(Info, Id, Mod))
              end || {Mod, Mod2NumInGroup} <- Mod2NumGroup]
 
         end || {ClusterId, ModGroup} <- SmallModGroups],
@@ -227,10 +235,14 @@ union(D1, D2) ->
     Mod2ModEdges = 
         [module_module_edge(Mod2Num, M1, M2, Id)
             || {{M1, M2}, Id} <- MM2Num],
-    Edges = Fun2FunEdges ++ Mod2FunEdges ++ Mod2ModEdges,
+    Edges =  Mod2ModEdges ++ Fun2FunEdges ++ Mod2FunEdges,
 
-    NAttrs = [gexf:attribute_metadata(0, "node_type", "string")],
-    EAttrs = [gexf:attribute_metadata(0, "edge_type", "string")],
+    NAttrs = [gexf:attribute_metadata(?NODE_TYPE_ATTR_ID, "node_type", "string")
+             ,gexf:attribute_metadata(?NODE_TITLE_ATTR_ID, "node_title", "string")
+             ,gexf:attribute_metadata(?NODE_LINE_NUM_ATTR_ID, "line_num", "integer")
+             ],
+    EAttrs = [gexf:attribute_metadata(?EDGE_TYPE_ATTR_ID, "edge_type", "string")
+             ,gexf:attribute_metadata(?EDGE_TITLE_ATTR_ID, "edge_title", "string")],
     chain(gexf:document_viz,
           gexf:add_attribute_metadata(node, NAttrs),
           gexf:add_attribute_metadata(edge, EAttrs)
@@ -239,25 +251,52 @@ union(D1, D2) ->
 
 mfa_to_module({M, _F, _A}) -> M.
 
-mfa_node(Id, MFA) ->
-    chain(gexf:add_attribute_value(0, mfa),
+mfa_node(Info, Id, MFA) ->
+    Node =
+    chain(gexf:add_attribute_value(?NODE_TYPE_ATTR_ID, mfa),
           gexf:set_label(mfa_to_string(MFA))
-          -- gexf:node(Id)).
+          -- gexf:node(Id)),
+    try
+      [Desc, LineNum] = inferno_server:function_info(Info, MFA, [title, position]),
+      Node1 = gexf:add_attribute_value(?NODE_LINE_NUM_ATTR_ID, LineNum, Node),
+      case Desc of
+        undefined ->
+          Node1;
+        _ ->
+          gexf:add_attribute_value(?NODE_TITLE_ATTR_ID, Desc, Node1)
+      end
+    catch error:_Reason ->
+        Node
+    end.
 
-module_node(Id, Mod) ->
-    chain(gexf:add_attribute_value(0, module),
+
+module_node(Info, Id, Mod) ->
+    Node =
+    chain(gexf:add_attribute_value(?NODE_TYPE_ATTR_ID, module),
           gexf:set_label(module_to_string(Mod))
-          -- gexf:node(Id)).
+          -- gexf:node(Id)),
+    try
+      [Desc] = inferno_server:module_info(Info, Mod, [title]),
+      case Desc of
+        undefined ->
+          Node;
+        _ ->
+          gexf:add_attribute_value(?NODE_TITLE_ATTR_ID, Desc, Node)
+      end
+    catch error:_Reason ->
+        Node
+    end.
 
 module_function_edge(Fun2Num, Mod2Num, Id, MFA) ->
     MFA2Id = orddict:fetch(_, Fun2Num),
     Mod2Id = orddict:fetch(_, Mod2Num),
-    chain(gexf:add_attribute_value(0, mf)
+    chain(gexf:add_attribute_value(?EDGE_TYPE_ATTR_ID, mf)
       -- gexf:edge(Id, MFA2Id(MFA), Mod2Id(mfa_to_module(MFA)))).
     
 module_module_edge(Mod2Num, M1, M2, Id) ->
     Mod2Id = orddict:fetch(_, Mod2Num),
-    chain(gexf:add_attribute_value(0, mm)
+    chain(gexf:set_weight(10),
+          gexf:add_attribute_value(?EDGE_TYPE_ATTR_ID, mm)
       -- gexf:edge(Id, Mod2Id(M1), Mod2Id(M2))).
 
 
