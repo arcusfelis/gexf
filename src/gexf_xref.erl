@@ -18,6 +18,7 @@
 -define(EDGE_TITLE_ATTR_ID, 1).
 
 -define(NODE_LINE_NUM_ATTR_ID, 2).
+-define(MFA_NODE_TYPE_ATTR_ID, 3).
 
 
 %'e-v'(Xref) ->
@@ -139,7 +140,9 @@ union(D1, D2) ->
     %% This function returns true, if the passed MFA is exported.
     IsFunExported = ordsets:is_element(_, XConFuns),
 
+    %% A function for splitting a list into a list of groups.
     GroupKeyMaker = fun({MFA, _}) -> {Fun2ClusterId(MFA), IsFunExported(MFA)} end,
+
     %% This orddict contains function names grouped by their cluster id and function type.
     FunGroups = clusterize(GroupKeyMaker, Fun2Num),
 
@@ -177,7 +180,7 @@ union(D1, D2) ->
                  FunPos -- FunNumInCluster)),
            gexf:add_size(NodeSizeValue),
            gexf:add_color(FunColor(MFA)),
-           mfa_node(Info, FunId) -- MFA)
+           mfa_node(Info, FunId, IsExported) -- MFA)
            end,
         countermap(WithFuns, Funs)
      end
@@ -240,6 +243,7 @@ union(D1, D2) ->
     NAttrs = [gexf:attribute_metadata(?NODE_TYPE_ATTR_ID, "node_type", "string")
              ,gexf:attribute_metadata(?NODE_TITLE_ATTR_ID, "node_title", "string")
              ,gexf:attribute_metadata(?NODE_LINE_NUM_ATTR_ID, "line_num", "integer")
+             ,gexf:attribute_metadata(?MFA_NODE_TYPE_ATTR_ID, "is_exported", "boolean")
              ],
     EAttrs = [gexf:attribute_metadata(?EDGE_TYPE_ATTR_ID, "edge_type", "string")
              ,gexf:attribute_metadata(?EDGE_TITLE_ATTR_ID, "edge_title", "string")],
@@ -251,9 +255,10 @@ union(D1, D2) ->
 
 mfa_to_module({M, _F, _A}) -> M.
 
-mfa_node(Info, Id, MFA) ->
+mfa_node(Info, Id, IsExported, MFA) ->
     Node =
     chain(gexf:add_attribute_value(?NODE_TYPE_ATTR_ID, mfa),
+          add_default_attribute_value(?MFA_NODE_TYPE_ATTR_ID, IsExported, false),
           gexf:set_label(mfa_to_string(MFA))
           -- gexf:node(Id)),
     try
@@ -268,6 +273,7 @@ mfa_node(Info, Id, MFA) ->
     catch error:_Reason ->
         Node
     end.
+
 
 
 module_node(Info, Id, Mod) ->
@@ -561,3 +567,10 @@ key_than_value_sort_test_() ->
 
 filter_id_pairs(XYs) ->
     [XY || XY = {X, Y} <- XYs, X =/= Y].
+
+
+
+%% @doc A wrapper, that allows to skip default value of the element.
+add_default_attribute_value(_AttrId, Default, Default, Node) -> Node;
+add_default_attribute_value(AttrId, Value, _Default, Node) ->
+    gexf:add_attribute_value(AttrId, Value, Node).
