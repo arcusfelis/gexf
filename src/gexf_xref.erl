@@ -62,21 +62,6 @@ union(D1, D2) ->
     {ok, Calls}  = xref:q(Xref, "XC|||(X+L)|||AM"),
     {ok, Mods}   = xref:q(Xref, "AM"), %% Mods :: [atom()]
 
-    %% ME: Module Edges. All module calls.
-    %% AM: Analyzed Modules.
-    %% ME ||| AM: Analyzed modules calls.
-    {ok, AME}    = xref:q(Xref, "ME ||| AM"),
-
-    %% AME contains:
-    %% {etorrent,etorrent},
-    %% {etorrent,etorrent_app},
-    %% {etorrent,etorrent_ctl},
-    %% {etorrent,etorrent_peer_states},
-    %% {etorrent,etorrent_query},
-    %%
-    %% AME stands for "Analyzed Module Edges".
-    AME1         = filter_id_pairs(AME),
-
     %% Connected functions are called from outside or calls something outside.
     ConFuns = lists:usort(lists:flatmap(fun tuple_to_list/1, Calls)),
     LConFuns = ordsets:intersection(LFuns, ConFuns),
@@ -225,10 +210,17 @@ union(D1, D2) ->
 
     ?check(?assertEqual(length(SmallModGroups), length(SmallModNodes))),
 
+    %% ME ||| AM: Analyzed modules calls.
+    %% AME to a call count
+    %% AME is `{ModuleName, ModuleName}'.
+    %%
+    %% TODO: Are `Calls' sorted? then we can remove `usort'.
+    AME2Count = calls_to_ame_count(lists:usort(Calls)),
+
     Nodes = LargeModNodes ++ lists:flatten(SmallModNodes) ++ lists:flatten(FunNodes),
     {Call2Num, Next@} = enumerate(Calls),
     {MF2Num, Next@}   = enumerate(XConFuns ++ LConFuns, Next@),
-    {MM2Num, _Next}   = enumerate(AME1, Next@),
+    {MMC2Num, _Next}   = enumerate(AME2Count, Next@),
     Fun2FunEdges = 
         [call_edge(Fun2Num, Id, FromMFA, ToMFA)
             || {{FromMFA, ToMFA}, Id} <- Call2Num],
@@ -236,8 +228,8 @@ union(D1, D2) ->
         [module_function_edge(Fun2Num, Mod2Num, Id, MFA)
             || {MFA, Id} <- MF2Num],
     Mod2ModEdges = 
-        [module_module_edge(Mod2Num, M1, M2, Id)
-            || {{M1, M2}, Id} <- MM2Num],
+        [module_module_edge(Mod2Num, M1, M2, CallCount, Id)
+            || {{{M1, M2}, CallCount}, Id} <- MMC2Num],
     Edges =  Mod2ModEdges ++ Fun2FunEdges ++ Mod2FunEdges,
 
     NAttrs = [gexf:attribute_metadata(?NODE_TYPE_ATTR_ID, "node_type", "string")
@@ -299,9 +291,9 @@ module_function_edge(Fun2Num, Mod2Num, Id, MFA) ->
     chain(gexf:add_attribute_value(?EDGE_TYPE_ATTR_ID, mf)
       -- gexf:edge(Id, MFA2Id(MFA), Mod2Id(mfa_to_module(MFA)))).
     
-module_module_edge(Mod2Num, M1, M2, Id) ->
+module_module_edge(Mod2Num, M1, M2, CallCount, Id) ->
     Mod2Id = orddict:fetch(_, Mod2Num),
-    chain(gexf:set_weight(10),
+    chain(gexf:set_weight(CallCount),
           gexf:add_attribute_value(?EDGE_TYPE_ATTR_ID, mm)
       -- gexf:edge(Id, Mod2Id(M1), Mod2Id(M2))).
 
@@ -565,12 +557,17 @@ key_than_value_sort_test_() ->
 
 
 
-filter_id_pairs(XYs) ->
-    [XY || XY = {X, Y} <- XYs, X =/= Y].
-
 
 
 %% @doc A wrapper, that allows to skip default value of the element.
 add_default_attribute_value(_AttrId, Default, Default, Node) -> Node;
 add_default_attribute_value(AttrId, Value, _Default, Node) ->
     gexf:add_attribute_value(AttrId, Value, Node).
+
+
+%% @doc Converts a list of `{FromMFA, ToMFA}' to a list of `{{Mod, Mod}, CountOfCalls}'.
+calls_to_ame_count(Calls) ->
+    lists2:group_count_with(fun call_to_ame/1, Calls).
+
+call_to_ame({{M1,_,_}, {M2,_,_}}) ->
+    {M1,M2}.
