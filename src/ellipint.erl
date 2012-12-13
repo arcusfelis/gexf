@@ -12,8 +12,8 @@
 
          eccentricity/2, 
 
-         point_generator/3,
-         cached_point_generator/3]).
+         point_generator/4,
+         cached_point_generator/4]).
 
 -ifdef(TEST).
 -include_lib("proper/include/proper.hrl").
@@ -184,19 +184,27 @@ rho_m(K, ThetaM) ->
 
 %% @doc Generates N random points for an ellipse inside the ellipse,
 %% parametered by (A cos t, B sin t).
-point_generator(A, B, N) ->
+%% O is a rotation offset.
+point_generator(A, B, N, O) ->
     TotalArcLen = circumference(A, B),
     ArcLen = TotalArcLen / N,
     fun(X) when 1 =< X, X =< N ->
-            P = (X - 1) * ArcLen,
+            P = fix_overflow(TotalArcLen, (X - 1) * ArcLen + O),
             K =  eccentricity(A, B),
             Angle = arc_length_to_angle(P, K, A, 100, 100, 0.0001),
             {A*math:cos(Angle), B*math:sin(Angle)}
         end.
 
 
-cached_point_generator(A, B, N) ->
-    F = point_generator(A, B, N),
+%% @doc Decrease Cur, when it is too high or too low.
+%% It fixes only if abs(Cur / Max) < 2.
+fix_overflow(Max, Cur) when Cur < 0   -> Max + Cur;
+fix_overflow(Max, Cur) when Cur < Max -> Cur;
+fix_overflow(Max, Cur) ->                Cur - Max.
+
+
+cached_point_generator(A, B, N, O) ->
+    F = point_generator(A, B, N, O),
     T = list_to_tuple(lists:map(F, lists:seq(1, N))),
     fun(X) -> element(X, T) end.
 

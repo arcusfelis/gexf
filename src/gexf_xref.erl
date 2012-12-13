@@ -61,6 +61,7 @@ union(D1, D2) ->
     {ok, LFuns}  = xref:q(Xref, "L"),
     {ok, Calls}  = xref:q(Xref, "XC|||(X+L)|||AM"),
     {ok, Mods}   = xref:q(Xref, "AM"), %% Mods :: [atom()]
+    [erlang:error(no_data) || Mods =:= []],
 
     %% Connected functions are called from outside or calls something outside.
     ConFuns = lists:usort(lists:flatmap(fun tuple_to_list/1, Calls)),
@@ -108,7 +109,9 @@ union(D1, D2) ->
     ClusterCount = LargeModCount + length(TinyFunCountByModsList),
 
     %% This function calculates the position of the cluster from the cluster id.
-    ClusterPos = get_module_circle_position(ClusterCount),
+    ExpClusterPos = get_module_exp_circle_position(ClusterCount),
+    LocClusterPos = get_module_loc_circle_position(ClusterCount),
+    TinClusterPos = get_module_tin_circle_position(ClusterCount),
 
     %% Module to its node id.
     Mod2Id = orddict:fetch(_, Mod2Num),
@@ -134,22 +137,14 @@ union(D1, D2) ->
     FunNodes = % [[Node]]
     [begin
         %% Calculate the center of the cluster.
-        ClusterPosValue = ClusterPos(ClusterId),
         %% This function calculates the coordinates of the point on the circle.
         %% xs and ys are in [-1..1].
         ParentCirclePosValue = 
             if 
-                IsExported ->
-                    ClusterPosValue;
-
+                IsExported -> ExpClusterPos(ClusterId);
                 %% This paint is the second center of the cluster 
                 %% (it is a point of the small ellipse).
-                %%
-                true ->
-                %% Compress and rotate the main ellipse:
-                chain(gexf:scale_position(0.7), 
-                      gexf:rotate_position(degrees_to_radians(10)) 
-                      -- ClusterPosValue)
+                true -> LocClusterPos(ClusterId)
             end,
         Scale = function_node_scale(IsExported),
         NodeSizeValue = chain(gexf:size, function_node_size -- IsExported),
@@ -179,7 +174,7 @@ union(D1, D2) ->
        [begin
             Id = Mod2Id(Mod),
             ClusterId = Mod2ClusterId(Mod),
-            chain(gexf:add_position(ClusterPos(ClusterId)), 
+            chain(gexf:add_position(ExpClusterPos(ClusterId)), 
                   gexf:add_size(gexf:size(15)),
                   gexf:add_color(module_color(ModColors, Id))
                   -- module_node(Info, Id, Mod))
@@ -193,12 +188,12 @@ union(D1, D2) ->
     SmallModNodes = 
        [begin
             ModPos = get_function_circle_position(length(ModGroup)),
-            ClusterPosValue = ClusterPos(ClusterId),
+            ClusterPosValue = TinClusterPos(ClusterId),
             {Mod2NumGroup, _Next} = enumerate(ModGroup),
             [begin
                 Id = Mod2Id(Mod),
                 chain(gexf:add_position(chain(
-                     gexf:relative_position(gexf:scale_position(1.2, ClusterPosValue)),
+                     gexf:relative_position(ClusterPosValue),
                      gexf:scale_position(0.08),
                      ModPos -- Mod2NumInGroup)),
                    gexf:add_size(gexf:size(8)),
@@ -379,12 +374,29 @@ get_function_circle_position(PointCount) ->
     get_dense_circle_position(PointCount).
 
 
-get_module_circle_position(PointCount) ->
-    Gen = ellipint:cached_point_generator(1.6, 1, PointCount),
+get_module_exp_circle_position(PointCount) ->
+    Gen = ellipint:cached_point_generator(2, 1, PointCount, 0),
     fun(Num) ->
         {X, Y} = Gen(Num),
         gexf:position(X, Y, 0)
         end.
+
+
+get_module_loc_circle_position(PointCount) ->
+    Gen = ellipint:cached_point_generator(1.4, 0.7, PointCount, 0.05),
+    fun(Num) ->
+        {X, Y} = Gen(Num),
+        gexf:position(X, Y, 0)
+        end.
+
+
+get_module_tin_circle_position(PointCount) ->
+    Gen = ellipint:cached_point_generator(2.4, 1.2, PointCount, -0.2),
+    fun(Num) ->
+        {X, Y} = Gen(Num),
+        gexf:position(X, Y, 0)
+        end.
+
 
 
 get_random_sparse_circle_position(PointCount) ->
