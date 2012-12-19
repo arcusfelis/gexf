@@ -1,6 +1,5 @@
 -module(gexf_xref).
-%-export(['e-v'/1]).
--export(['e-v-m'/2]).
+-export([generate/2]).
 -compile({parse_transform, mead}).
 -compile({parse_transform, cut}).
 -compile({parse_transform, chacha}).
@@ -20,16 +19,6 @@
 -define(NODE_LINE_NUM_ATTR_ID, 2).
 -define(MFA_NODE_TYPE_ATTR_ID, 3).
 
-
-%'e-v'(Xref) ->
-%    {ok, Funs}  = xref:q(Xref, "V"),
-%    {ok, Calls} = xref:q(Xref, "E"),
-%    Fun2Num  = enumerate(Funs),
-%    Call2Num = enumerate(Calls),
-%    Nodes = [mfa_node(Id, MFA) || {MFA, Id} <- Fun2Num],
-%    Edges = [call_edge(Fun2Num, Id, FromMFA, ToMFA) 
-%                || {{FromMFA, ToMFA}, Id} <- Call2Num],
-%    gexf:document(gexf:graph(Nodes, Edges)).
 
 module_colors(Mods) ->
 %   crypto:rand_bytes(length(Mods) * 3).
@@ -55,7 +44,7 @@ brighter_colors(Mask, Colors) ->
 union(D1, D2) -> 
     orddict:merge(fun(_K, X, _Y) -> X end, D1, D2).
 
-'e-v-m'(Xref, Info) ->
+generate(Xref, Info) ->
     %% Returned values were already sorted and they are unique.
     {ok, XFuns}  = xref:q(Xref, "X"),
     {ok, LFuns}  = xref:q(Xref, "L"),
@@ -80,7 +69,7 @@ union(D1, D2) ->
     Fun2Num = union(XFun2Num, LFun2Num),
 
     %% Group functions by module.
-    FunByMods = clusterize(fun({MFA, _}) -> mfa_to_module(MFA) end, Fun2Num),
+    FunByMods = lists2:group_with(fun({MFA, _}) -> mfa_to_module(MFA) end, Fun2Num),
 
     %% Calculate how many functions are in each module.
     FunCountByMods = [{M, length(Fs)} || {M, Fs} <- FunByMods],
@@ -111,7 +100,6 @@ union(D1, D2) ->
     %% This function calculates the position of the cluster from the cluster id.
     ExpClusterPos = get_module_exp_circle_position(ClusterCount),
     LocClusterPos = get_module_loc_circle_position(ClusterCount),
-    TinClusterPos = get_module_tin_circle_position(ClusterCount),
 
     %% Module to its node id.
     Mod2Id = orddict:fetch(_, Mod2Num),
@@ -128,11 +116,37 @@ union(D1, D2) ->
     %% This function returns true, if the passed MFA is exported.
     IsFunExported = ordsets:is_element(_, XConFuns),
 
-    %% A function for splitting a list into a list of groups.
-    GroupKeyMaker = fun({MFA, _}) -> {Fun2ClusterId(MFA), IsFunExported(MFA)} end,
 
+    %% SMALL MODULE NODES
+    %% Few small modules are combined info one circle, so Funs can have modules
+    %% from different modules.
+    %% Layout for small modules consists of a set of segments.
+    %% While for usual layout the module node is in center, 
+    %% the place for small module node is on a circle.
+    %%
+    %% This code inserts a module node in the head of segment.
+    %%
+    %% This code sorts functions and modules to put modules before functions 
+    %% in each module group.
+    SortKeyMaker = fun
+        ({{M,_,_} = _MFA, _}) -> 
+            M;
+        ({M, _ClusterNum}) ->
+            M
+        end,
+    SortedNodes = lists2:collate_with(SortKeyMaker, TinyMod2ClusterNum ++ Fun2Num),
+
+    %% A function for splitting a list into a list of groups.
+    GroupKeyMaker = fun
+        ({{_,_,_} = MFA, _}) -> 
+            {Fun2ClusterId(MFA), IsFunExported(MFA)};
+        ({_M, ClusterNum}) ->
+            {ClusterNum, true}
+        end,
+      
     %% This orddict contains function names grouped by their cluster id and function type.
-    FunGroups = clusterize(GroupKeyMaker, Fun2Num),
+    %% group_with/2 saves order.
+    FunGroups = lists2:group_with(GroupKeyMaker, SortedNodes),
 
     FunNodes = % [[Node]]
     [begin
@@ -148,21 +162,37 @@ union(D1, D2) ->
             end,
         Scale = function_node_scale(IsExported),
         NodeSizeValue = chain(gexf:size, function_node_size -- IsExported),
+    
         FunPos = get_function_circle_position(length(Funs)),
-        WithFuns = fun({MFA, FunId}, FunNumInCluster) ->
+        WithFuns = fun
+            ({MFA = {_,_,_}, FunId}, FunNumInCluster) ->
 %          io:format(user, "~p\n~p\t", [MFA, FunId]),
-           chain(gexf:add_position(chain(
-                 %% Decrease the size of the calls' circle and move 
-                 %% (the center of this circle is the center of the cluster
-                 %% or its virtual center).
-                 gexf:relative_position(ParentCirclePosValue),
-                 gexf:scale_position(Scale),
-                 FunPos -- FunNumInCluster)),
-           gexf:add_size(NodeSizeValue),
-           gexf:add_color(FunColor(MFA)),
-           mfa_node(Info, FunId, IsExported) -- MFA)
+               chain(gexf:add_position(chain(
+                     %% Decrease the size of the calls' circle and move 
+                     %% (the center of this circle is the center of the cluster
+                     %% or its virtual center).
+                     gexf:relative_position(ParentCirclePosValue),
+                     gexf:scale_position(Scale),
+                     FunPos -- FunNumInCluster)),
+                   gexf:add_size(NodeSizeValue),
+                   gexf:add_color(FunColor(MFA)),
+                   mfa_node(Info, FunId, IsExported) -- MFA);
+
+            %% Step 3. It is a special case for module node.
+            ({Mod, _ClusterId}, ModNumInCluster) ->
+               Id = Mod2Id(Mod),
+               chain(gexf:add_position(chain(
+                     %% Decrease the size of the calls' circle and move 
+                     %% (the center of this circle is the center of the cluster
+                     %% or its virtual center).
+                     gexf:relative_position(ParentCirclePosValue),
+                     gexf:scale_position(Scale),
+                     FunPos -- ModNumInCluster)),
+                   gexf:add_size(gexf:size(9)),
+                   gexf:add_color(module_color(ModColors, Id))
+                   -- module_node(Info, Id, Mod))
            end,
-        countermap(WithFuns, Funs)
+        lists2:cmap(WithFuns, Funs)
      end
      %% The `Funs' variable is a list of MFA.
         || {{ClusterId, IsExported}, Funs} <- FunGroups],
@@ -182,28 +212,6 @@ union(D1, D2) ->
 
     ?check(?assertEqual(length(LargeModNodes), length(LargeMods))),
 
-    TinyClusterNum2Mod = lists:sort(swap_pairs(TinyMod2ClusterNum)),
-    SmallModGroups = tuple_e1_key_e2_value_groups(TinyClusterNum2Mod),
-    %% Render small modules.
-    SmallModNodes = 
-       [begin
-            ModPos = get_function_circle_position(length(ModGroup)),
-            ClusterPosValue = TinClusterPos(ClusterId),
-            {Mod2NumGroup, _Next} = enumerate(ModGroup),
-            [begin
-                Id = Mod2Id(Mod),
-                chain(gexf:add_position(chain(
-                     gexf:relative_position(ClusterPosValue),
-                     gexf:scale_position(0.08),
-                     ModPos -- Mod2NumInGroup)),
-                   gexf:add_size(gexf:size(8)),
-                   gexf:add_color(module_color(ModColors, Id))
-                   -- module_node(Info, Id, Mod))
-             end || {Mod, Mod2NumInGroup} <- Mod2NumGroup]
-
-        end || {ClusterId, ModGroup} <- SmallModGroups],
-
-    ?check(?assertEqual(length(SmallModGroups), length(SmallModNodes))),
 
     %% ME ||| AM: Analyzed modules calls.
     %% AME to a call count
@@ -212,10 +220,10 @@ union(D1, D2) ->
     %% TODO: Are `Calls' sorted? then we can remove `usort'.
     AME2Count = calls_to_ame_count(lists:usort(Calls)),
 
-    Nodes = LargeModNodes ++ lists:flatten(SmallModNodes) ++ lists:flatten(FunNodes),
+    Nodes = LargeModNodes ++ lists:flatten(FunNodes),
     {Call2Num, Next@} = enumerate(Calls),
     {MF2Num, Next@}   = enumerate(XConFuns ++ LConFuns, Next@),
-    {MMC2Num, _Next}   = enumerate(AME2Count, Next@),
+    {MMC2Num, _Next}  = enumerate(AME2Count, Next@),
     Fun2FunEdges = 
         [call_edge(Fun2Num, Id, FromMFA, ToMFA)
             || {{FromMFA, ToMFA}, Id} <- Call2Num],
@@ -314,30 +322,6 @@ mfa_to_string({_M, F, A}) ->
 
 module_to_string(Mod) -> atom_to_list(Mod).
 
-clusterize(KeyFn, Xs) ->
-    clusterize_sorted(KeyFn, key_than_value_sort(KeyFn, Xs)).
-
-%% @doc List is a sorted record with `KeyFn' as a sorter.
-clusterize_sorted(KeyFn, [H|T]) ->
-    do_clusterize(KeyFn, KeyFn(H), T, [H], []).
-
-key_than_value_sort(KeyFn, Xs) ->
-    lists:sort(fun(X, Y) -> {KeyFn(X), X} < {KeyFn(Y), Y} end, Xs).
-
-%% A - intermidiate acc; R - acc for result
-%% Accs are reversed.
-do_clusterize(KeyFn, PrevKey, [H|T], A, R) ->
-    case KeyFn(H) of
-        PrevKey ->
-            do_clusterize(KeyFn, PrevKey, T, [H|A], R);
-        NewKey ->
-            RH = {PrevKey, lists:reverse(A)},
-            do_clusterize(KeyFn, NewKey, T, [H], [RH|R])
-    end;
-do_clusterize(_KeyFn, PrevKey, [], A, R) ->
-    RH = {PrevKey, lists:reverse(A)},
-    lists:reverse([RH|R]).
-
 %% ------------------------------------------------------------------
 %% Circle
 %% ------------------------------------------------------------------
@@ -375,7 +359,7 @@ get_function_circle_position(PointCount) ->
 
 
 get_module_exp_circle_position(PointCount) ->
-    Gen = ellipint:cached_point_generator(2, 1, PointCount, 0),
+    Gen = ellipint:cached_point_generator(1.7, 1, PointCount, 0),
     fun(Num) ->
         {X, Y} = Gen(Num),
         gexf:position(X, Y, 0)
@@ -388,15 +372,6 @@ get_module_loc_circle_position(PointCount) ->
         {X, Y} = Gen(Num),
         gexf:position(X, Y, 0)
         end.
-
-
-get_module_tin_circle_position(PointCount) ->
-    Gen = ellipint:cached_point_generator(2.4, 1.2, PointCount, -0.2),
-    fun(Num) ->
-        {X, Y} = Gen(Num),
-        gexf:position(X, Y, 0)
-        end.
-
 
 
 get_random_sparse_circle_position(PointCount) ->
@@ -437,15 +412,15 @@ get_dense_circle_position(PointCount) ->
 
 -spec function_node_size(IsExported) -> Size when 
     IsExported :: boolean(), Size :: number().
-function_node_size(true)  -> 6;
-function_node_size(false) -> 3.
+function_node_size(true)  -> 5;
+function_node_size(false) -> 4.
 
 
 %% @doc The scale controls the size of the function circle.
 -spec function_node_scale(IsExported) -> Scale when 
     IsExported :: boolean(), Scale :: number().
 
-function_node_scale(true)  -> 0.08;
+function_node_scale(true)  -> 0.07;
 function_node_scale(false) -> 0.05.
 
 
@@ -545,26 +520,6 @@ swap_pairs(Pairs) ->
     [{V, K} || {K, V} <- Pairs].
 
 
-countermap(F, Xs) ->
-    countermap(F, Xs, 1).
-
-
-countermap(F, [X|Xs], C) ->
-    [F(X, C)|countermap(F, Xs, C+1)];
-
-countermap(_F, [], _C) ->
-    [].
-
-
--ifdef(TEST).
-
-clusterize_test_() ->
-    [?_assertEqual(clusterize(fun(X) -> X rem 2 end, [1,2,4,5,3]), [{0, [2, 4]}, {1, [1, 3, 5]}])].
-
-key_than_value_sort_test_() ->
-    [?_assertEqual(key_than_value_sort(fun(X) -> X rem 2 end, [1,2,4,5,3]), [2,4,1,3,5])].
-
--endif.
 
 
 
@@ -583,3 +538,10 @@ calls_to_ame_count(Calls) ->
 
 call_to_ame({{M1,_,_}, {M2,_,_}}) ->
     {M1,M2}.
+
+
+od_get_value(Key, Dict, Def) ->
+    case orddict:find(Key, Dict) of
+        {ok, Val} -> Val;
+        error -> Def
+    end.
