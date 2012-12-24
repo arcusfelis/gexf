@@ -359,7 +359,8 @@ get_function_circle_position(PointCount) ->
 
 
 get_module_exp_circle_position(PointCount) ->
-    Gen = ellipint:cached_point_generator(1.7, 1, PointCount, 0),
+    {W,H,_,_} = ellipse_dimentions(PointCount),
+    Gen = ellipint:cached_point_generator(W, H, PointCount, 0),
     fun(Num) ->
         {X, Y} = Gen(Num),
         gexf:position(X, Y, 0)
@@ -367,11 +368,17 @@ get_module_exp_circle_position(PointCount) ->
 
 
 get_module_loc_circle_position(PointCount) ->
-    Gen = ellipint:cached_point_generator(1.4, 0.7, PointCount, 0.05),
+    {_,_,W,H} = ellipse_dimentions(PointCount),
+    Gen = ellipint:cached_point_generator(W, H, PointCount, 0.05),
     fun(Num) ->
         {X, Y} = Gen(Num),
         gexf:position(X, Y, 0)
         end.
+
+
+%% `{LargeCircleWidth, LargeCircleHeight, SmallCircleWidth, SmallCircleHeight}'.
+ellipse_dimentions(PointCount) when PointCount < 10 -> {0.6, 0.3,   0.3, 0.15};
+ellipse_dimentions(_PointCount)                     -> {1.7, 1,     1.4, 0.7}.
 
 
 get_random_sparse_circle_position(PointCount) ->
