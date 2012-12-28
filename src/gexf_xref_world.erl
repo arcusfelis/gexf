@@ -60,7 +60,11 @@ generate(Xref) ->
 
     %% `strict' deletes `{M, M}' (same module name).
     %% `|| AM' deletes `{M,$M_EXPR}'.
-    {ok, M2MCalls} = xref:q(Xref, "(Mod) strict AE || AM"),
+    {ok, M2MCalls}      = xref:q(Xref, "(Mod) strict AE || AM"),
+
+    %% Calls inside the application.
+    %% `AE - strict AE' is a list of form `[{App, App}]'.
+    {ok, LocalM2MCalls} = xref:q(Xref, "(Mod) (AE - strict AE) || AM"),
 
     %% `AM' - analyzed modules.
     {ok, Mods} = xref:q(Xref, "AM"),
@@ -145,9 +149,11 @@ generate(Xref) ->
 
     Nodes = AppNodes ++ lists:flatten(ModNodes),
 
-    {AA2Num, Next@}   = enumerate(AA),
-    {Call2Num, Next@} = enumerate(M2MCalls, Next@),
-    {AM2Num,  Next@}  = enumerate(Mod2AppPL, Next@),
+    {AA2Num, Next@}      = enumerate(AA),
+    {Call2Num, Next@}    = enumerate(M2MCalls, Next@),
+    {LocCall2Num, Next@} = enumerate(LocalM2MCalls, Next@),
+    {AM2Num,  Next@}     = enumerate(Mod2AppPL, Next@),
+    
     Mod2ModEdges = 
         [call_edge(Mod2Id, Id, FromMod, ToMod)
             || {{FromMod, ToMod}, Id} <- Call2Num],
@@ -157,7 +163,10 @@ generate(Xref) ->
     App2AppEdges = 
         [application_application_edge(App2Id, App1, App2, Id)
             || {{App1, App2}, Id} <- AA2Num],
-    Edges = App2AppEdges ++ Mod2ModEdges ++ App2ModEdges, 
+    LocalMod2ModEdges = 
+        [local_call_edge(Mod2Id, Id, FromMod, ToMod)
+            || {{FromMod, ToMod}, Id} <- LocCall2Num],
+    Edges = App2AppEdges ++ Mod2ModEdges ++ LocalMod2ModEdges ++ App2ModEdges, 
 
     NAttrs = [gexf:attribute_metadata(?NODE_TYPE_ATTR_ID, "node_type", "string")
              ,gexf:attribute_metadata(?NODE_TITLE_ATTR_ID, "node_title", "string")
@@ -207,6 +216,11 @@ module_to_application(Mod2App, Mod) ->
 
 call_edge(Mod2Id, Id, FromMod, ToMod) ->
     gexf:edge(Id, Mod2Id(FromMod), Mod2Id(ToMod)).
+
+local_call_edge(Mod2Id, Id, FromMod, ToMod) ->
+    chain(gexf:add_attribute_value(?EDGE_TYPE_ATTR_ID, lmm)
+      -- gexf:edge(Id, Mod2Id(FromMod), Mod2Id(ToMod))).
+
 
 enumerate(Objects) ->
     enumerate(Objects, 1).
