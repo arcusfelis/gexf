@@ -64,7 +64,7 @@ generate(Xref) ->
 
     %% Calls inside the application.
     %% `AE - strict AE' is a list of form `[{App, App}]'.
-    {ok, LocalM2MCalls} = xref:q(Xref, "(Mod) (AE - strict AE) || AM"),
+    {ok, LocalM2MCalls} = xref:q(Xref, "strict (Mod) (AE - strict AE) || AM"),
 
     %% `AM' - analyzed modules.
     {ok, Mods} = xref:q(Xref, "AM"),
