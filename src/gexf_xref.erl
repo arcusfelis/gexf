@@ -18,6 +18,8 @@
 
 -define(NODE_LINE_NUM_ATTR_ID, 2).
 -define(MFA_NODE_TYPE_ATTR_ID, 3).
+-define(NODE_APP_NAME_ATTR_ID, 4).
+-define(NODE_APP_COLOR_ATTR_ID, 5).
 
 
 module_colors(Mods) ->
@@ -36,6 +38,19 @@ module_color(Colors, ModId) ->
     Skip = (ModId - 1) * 24,
     <<_:Skip, R, G, B, _/binary>> = Colors, 
     gexf:color(R, G, B).
+
+
+app_color(App) ->
+    Bin = binary:part(crypto:md5(unicode:characters_to_binary(application_to_string(App))), 0, 3),
+    <<R, G, B>> = brighter_colors(128, Bin),
+    html_color(R, G, B).
+
+html_color(R, G, B) ->
+    lists:flatten(io_lib:format("#~2.16.0B~2.16.0B~2.16.0B", [R, G, B])).
+
+
+maybe_app_color(undefined) -> undefined;
+maybe_app_color(App)       -> app_color(App).
 
 brighter_colors(Mask, Colors) ->
     << <<(X bor Mask)>> || <<X>> <= Colors>>.
@@ -239,6 +254,8 @@ generate(Xref, Info) ->
              ,gexf:attribute_metadata(?NODE_TITLE_ATTR_ID, "node_title", "string")
              ,gexf:attribute_metadata(?NODE_LINE_NUM_ATTR_ID, "line_num", "integer")
              ,gexf:attribute_metadata(?MFA_NODE_TYPE_ATTR_ID, "is_exported", "boolean")
+             ,gexf:attribute_metadata(?NODE_APP_NAME_ATTR_ID, "app_name", "string")
+             ,gexf:attribute_metadata(?NODE_APP_COLOR_ATTR_ID, "app_color", "string")
              ],
     EAttrs = [gexf:attribute_metadata(?EDGE_TYPE_ATTR_ID, "edge_type", "string")
              ,gexf:attribute_metadata(?EDGE_TITLE_ATTR_ID, "edge_title", "string")],
@@ -277,13 +294,12 @@ module_node(Info, Id, Mod) ->
           gexf:set_label(module_to_string(Mod))
           -- gexf:node(Id)),
     try
-      [Desc] = inferno_server:module_info(Info, Mod, [title]),
-      case Desc of
-        undefined ->
-          Node;
-        _ ->
-          gexf:add_attribute_value(?NODE_TITLE_ATTR_ID, Desc, Node)
-      end
+      [Desc, AppName] = 
+          inferno_server:module_info(Info, Mod, [title, application_name]),
+        chain(maybe_attribute_value(?NODE_APP_NAME_ATTR_ID, AppName),
+              maybe_attribute_value(?NODE_APP_COLOR_ATTR_ID, maybe_app_color(AppName)),
+              maybe_attribute_value(?NODE_TITLE_ATTR_ID, Desc)
+              -- Node)
     catch error:_Reason ->
         Node
     end.
@@ -321,6 +337,7 @@ mfa_to_string({_M, F, A}) ->
     lists:flatten(io_lib:format("~p/~p", [F, A])).
 
 module_to_string(Mod) -> atom_to_list(Mod).
+application_to_string(App) -> atom_to_list(App).
 
 %% ------------------------------------------------------------------
 %% Circle
@@ -537,6 +554,10 @@ swap_pairs(Pairs) ->
 add_default_attribute_value(_AttrId, Default, Default, Node) -> Node;
 add_default_attribute_value(AttrId, Value, _Default, Node) ->
     gexf:add_attribute_value(AttrId, Value, Node).
+
+
+maybe_attribute_value(AttrId, Value, Node) ->
+    add_default_attribute_value(AttrId, Value, undefined, Node).
 
 
 %% @doc Converts a list of `{FromMFA, ToMFA}' to a list of `{{Mod, Mod}, CountOfCalls}'.
