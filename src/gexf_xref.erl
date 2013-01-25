@@ -366,6 +366,8 @@ arc_length_with_gap(PointCount) ->
     (360 - ?GAP_SIZE*2) / PointCount.
 
 
+get_function_circle_position(0) ->
+    not_fun;
 get_function_circle_position(PointCount) when PointCount == 0 ->
     0;
 get_function_circle_position(PointCount) when PointCount < 20 ->
@@ -375,6 +377,8 @@ get_function_circle_position(PointCount) ->
     get_dense_circle_position(PointCount).
 
 
+get_module_exp_circle_position(0) ->
+    not_fun;
 get_module_exp_circle_position(PointCount) ->
     {W,H,_,_} = ellipse_dimentions(PointCount),
     Gen = ellipint:cached_point_generator(W, H, PointCount, 0),
@@ -384,6 +388,8 @@ get_module_exp_circle_position(PointCount) ->
         end.
 
 
+get_module_loc_circle_position(0) ->
+    not_fun;
 get_module_loc_circle_position(PointCount) ->
     {_,_,W,H} = ellipse_dimentions(PointCount),
     Gen = ellipint:cached_point_generator(W, H, PointCount, 0.05),
@@ -455,6 +461,7 @@ function_node_scale(false) -> 0.05.
     MFs :: {Module, FunCount},
     Module :: atom().
 
+move_tiny_modules_out([]) -> {[], []};
 move_tiny_modules_out(FunCountByMods) ->
     TotalCount = total_function_count(FunCountByMods),
     MCount = length(FunCountByMods),
