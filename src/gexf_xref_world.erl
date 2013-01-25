@@ -1,5 +1,5 @@
 -module(gexf_xref_world).
--export([generate/1]).
+-export([generate/2]).
 -compile({parse_transform, mead}).
 -compile({parse_transform, cut}).
 -compile({parse_transform, chacha}).
@@ -49,7 +49,7 @@ mod_color(Mod) ->
 union(D1, D2) -> 
     orddict:merge(fun(_K, X, _Y) -> X end, D1, D2).
 
-generate(Xref) ->
+generate(Xref, Info) ->
     %% Apps = [kernel,snmp,stdlib]
     {ok, Apps}  = xref:q(Xref, "A"),
     %% [{kernel, [array, base64,...], {snmp, [...], ...]
@@ -125,7 +125,7 @@ generate(Xref) ->
                      ModPos -- NumInCluster)),
                    gexf:add_size(gexf:size(5)),
                    gexf:add_color(ModColor(Mod))
-                   -- module_node(ModId, Mod))
+                   -- module_node(ModId, Mod, Info))
            end,
         lists2:cmap(WithFuns, Mods)
      end
@@ -142,7 +142,7 @@ generate(Xref) ->
             chain(gexf:add_position(PosValue), 
                   gexf:add_size(gexf:size(15)),
                   gexf:add_color(application_color(AppColors, Id))
-                  -- application_node(Id, App))
+                  -- application_node(Id, App, Info))
         end || App <- Apps],
 
     ?check(?assertEqual(length(AppNodes), length(Apps))),
@@ -182,14 +182,20 @@ generate(Xref) ->
 
 
 
-module_node(Id, Module) ->
+module_node(Id, Module, Info) ->
+    [Title] = 
+        inferno_server:module_info(Info, Module, [title]),
     chain(gexf:add_attribute_value(?NODE_TYPE_ATTR_ID, module),
-          gexf:set_label(module_to_string(Module))
+          gexf:set_label(module_to_string(Module)),
+          add_default_attribute_value(?NODE_TITLE_ATTR_ID, Title, undefined)
           -- gexf:node(Id)).
 
-application_node(Id, App) ->
+application_node(Id, App, Info) ->
+    [Title] = 
+        inferno_server:application_info(Info, App, [title]),
     chain(gexf:add_attribute_value(?NODE_TYPE_ATTR_ID, app),
-          gexf:set_label(application_to_string(App))
+          gexf:set_label(application_to_string(App)),
+          add_default_attribute_value(?NODE_TITLE_ATTR_ID, Title, undefined)
           -- gexf:node(Id)).
 
 
@@ -334,3 +340,6 @@ application_modules(Xref, App) ->
     Mods.
 
 
+add_default_attribute_value(_AttrId, Default, Default, Node) -> Node;
+add_default_attribute_value(AttrId, Value, _Default, Node) ->
+    gexf:add_attribute_value(AttrId, Value, Node).
