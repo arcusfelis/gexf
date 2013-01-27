@@ -21,6 +21,8 @@
 -define(NODE_APP_NAME_ATTR_ID, 4).
 -define(NODE_APP_COLOR_ATTR_ID, 5).
 
+-define(NODE_BEHAVIOUR_ATTR_ID, 6).
+
 
 module_colors(Mods) ->
 %   crypto:rand_bytes(length(Mods) * 3).
@@ -256,6 +258,8 @@ generate(Xref, Info) ->
              ,gexf:attribute_metadata(?MFA_NODE_TYPE_ATTR_ID, "is_exported", "boolean")
              ,gexf:attribute_metadata(?NODE_APP_NAME_ATTR_ID, "app_name", "string")
              ,gexf:attribute_metadata(?NODE_APP_COLOR_ATTR_ID, "app_color", "string")
+             ,gexf:attribute_metadata(?NODE_BEHAVIOUR_ATTR_ID, "behaviours[]", "string")
+
              ],
     EAttrs = [gexf:attribute_metadata(?EDGE_TYPE_ATTR_ID, "edge_type", "string")
              ,gexf:attribute_metadata(?EDGE_TITLE_ATTR_ID, "edge_title", "string")],
@@ -274,14 +278,11 @@ mfa_node(Info, Id, IsExported, MFA) ->
           gexf:set_label(mfa_to_string(MFA))
           -- gexf:node(Id)),
     try
-      [Desc, LineNum] = inferno_server:function_info(Info, MFA, [title, position]),
-      Node1 = gexf:add_attribute_value(?NODE_LINE_NUM_ATTR_ID, LineNum, Node),
-      case Desc of
-        undefined ->
-          Node1;
-        _ ->
-          gexf:add_attribute_value(?NODE_TITLE_ATTR_ID, Desc, Node1)
-      end
+        inferno_server:function_info(Info, MFA, [title, position, behaviours])
+    of [Desc, LineNum, Behaviours] ->
+        chain(maybe_attribute_value(?NODE_TITLE_ATTR_ID, Desc),
+              gexf:add_attribute_value(?NODE_LINE_NUM_ATTR_ID, LineNum),
+              add_behaviours_attribute(Behaviours) -- Node)
     catch error:_Reason ->
         Node
     end.
@@ -294,15 +295,26 @@ module_node(Info, Id, Mod) ->
           gexf:set_label(module_to_string(Mod))
           -- gexf:node(Id)),
     try
-      [Desc, AppName] = 
-          inferno_server:module_info(Info, Mod, [title, application_name]),
+          inferno_server:module_info(Info, Mod, [title, application_name, behaviours])
+    of [Desc, AppName, Behaviours] ->
         chain(maybe_attribute_value(?NODE_APP_NAME_ATTR_ID, AppName),
               maybe_attribute_value(?NODE_APP_COLOR_ATTR_ID, maybe_app_color(AppName)),
-              maybe_attribute_value(?NODE_TITLE_ATTR_ID, Desc)
+              maybe_attribute_value(?NODE_TITLE_ATTR_ID, Desc),
+              %% For each behaviour, set behaviours[] = BehName.
+              add_behaviours_attribute(Behaviours)
               -- Node)
+
     catch error:_Reason ->
         Node
     end.
+
+add_behaviours_attribute([B|Bs], Node) ->
+    %% For each behaviour, set behaviours[] = BehName.
+    Node1 = gexf:add_attribute_value(?NODE_BEHAVIOUR_ATTR_ID, B, Node),
+    add_behaviours_attribute(Bs, Node1);
+add_behaviours_attribute([], Node) ->
+    Node.
+
 
 module_function_edge(Fun2Num, Mod2Num, Id, MFA) ->
     MFA2Id = orddict:fetch(_, Fun2Num),
