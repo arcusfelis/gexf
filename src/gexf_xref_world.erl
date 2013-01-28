@@ -56,7 +56,7 @@ generate(Xref, Info) ->
     ModByApps = [{App, application_modules(Xref, App)} || App <- Apps],
     Mod2AppPL = [{Mod, App} || {App, Mods} <- ModByApps, Mod <- Mods],
     %% Convert proplist to dict.
-    Mod2App = dict:from_list(Mod2AppPL),
+%   Mod2App = dict:from_list(Mod2AppPL),
 
     %% `strict' deletes `{M, M}' (same module name).
     %% `|| AM' deletes `{M,$M_EXPR}'.
@@ -80,15 +80,18 @@ generate(Xref, Info) ->
     {Mod2Num,  Next@} = enumerate(Mods, Next@),
 
     %% Calculate how many modules are in each application.
-    ModCountByApps = [{A, length(Ms)} || {A, Ms} <- ModByApps],
+%   ModCountByApps = [{A, length(Ms)} || {A, Ms} <- ModByApps],
+
+    Mod2NumDict = dict:from_list(Mod2Num),
+    App2NumDict = dict:from_list(App2Num),
 
     %% Module to its node id.
-    Mod2Id = module_id(Mod2Num, _),
-    App2Id = application_id(App2Num, _),
+    Mod2Id = dict:fetch(_, Mod2NumDict),
+    App2Id = dict:fetch(_, App2NumDict),
 
-    Mod2AppNumPL = [{Mod, App2Id(App)} || {Mod, App} <- Mod2AppPL],
-    Mod2AppNum = dict:from_list(Mod2AppNumPL),
-    Mod2AppId = dict:fetch(_, Mod2AppNum),
+%   Mod2AppNumPL = [{Mod, App2Id(App)} || {Mod, App} <- Mod2AppPL],
+%   Mod2AppNum = dict:from_list(Mod2AppNumPL),
+%   Mod2AppId = dict:fetch(_, Mod2AppNum),
 
     %% Function, that converts MFA to GEXF color.
 %   ModColor = chain(application_color(AppColors), Mod2AppId),
@@ -100,8 +103,7 @@ generate(Xref, Info) ->
 
     %% Module to its virtual cluster number.
     %% For large modules, the cluster center and the module center are the same.
-    Mod2ClusterId = orddict:fetch(_, Mod2AppNum),
-    App2ClusterId = orddict:fetch(_, App2Num),
+    App2ClusterId = App2Id,
 
     App2Pos = chain(ClusterPos, App2ClusterId),
 
@@ -186,16 +188,16 @@ module_node(Id, Module, Info) ->
     [Title] = 
         inferno_server:module_info(Info, Module, [title]),
     chain(gexf:add_attribute_value(?NODE_TYPE_ATTR_ID, module),
-          gexf:set_label(module_to_string(Module)),
-          add_default_attribute_value(?NODE_TITLE_ATTR_ID, Title, undefined)
+          add_default_attribute_value(?NODE_TITLE_ATTR_ID, Title, undefined),
+          gexf:set_label(module_to_string(Module))
           -- gexf:node(Id)).
 
 application_node(Id, App, Info) ->
     [Title] = 
         inferno_server:application_info(Info, App, [title]),
     chain(gexf:add_attribute_value(?NODE_TYPE_ATTR_ID, app),
-          gexf:set_label(application_to_string(App)),
-          add_default_attribute_value(?NODE_TITLE_ATTR_ID, Title, undefined)
+          add_default_attribute_value(?NODE_TITLE_ATTR_ID, Title, undefined),
+          gexf:set_label(application_to_string(App))
           -- gexf:node(Id)).
 
 
@@ -207,16 +209,6 @@ application_application_edge(App2Id, App1, App2, Id) ->
     chain(gexf:set_weight(15),
           gexf:add_attribute_value(?EDGE_TYPE_ATTR_ID, aa)
       -- gexf:edge(Id, App2Id(App1), App2Id(App2))).
-
-
-module_id(Mod2Num, Module) ->
-    orddict:fetch(Module, Mod2Num).
-
-application_id(App2Num, App) ->
-    orddict:fetch(App, App2Num).
-
-module_to_application(Mod2App, Mod) ->
-    orddict:fetch(Mod, Mod2App).
 
 
 
@@ -322,15 +314,6 @@ get_dense_circle_position(PointCount) ->
         {X, Y} = angle_to_coordinates(degrees_to_radians(AL * Num + Offset2)),
         gexf:position(X, Y, 0)
         end.
-
-
-
-
-od_get_value(Key, Dict, Def) ->
-    case orddict:find(Key, Dict) of
-        {ok, Val} -> Val;
-        error -> Def
-    end.
 
 
 application_modules(Xref, App) ->

@@ -9,7 +9,8 @@
          graph/2]).
 
 %% Data
--export([add_attribute_value/3]).
+-export([add_attribute_value/3,
+         set_attributes/2]).
 
 %% Metadata
 -export([add_attribute_metadata/3,
@@ -258,6 +259,12 @@ document_viz(Graph) ->
 set_attribute(Key, Value, Elem) ->
     %% Use cut.
     with_attributes(orddict:store(Key, Value, _), Elem).
+
+
+%% @doc The first argument is an ordset.
+%% All old attributes will be deleted.
+set_attributes(Attrs, {Tag, _Attrs, Value}) ->
+    {Tag, Attrs, Value}.
 
 
 get_attribute(Key, {_Tag, Attrs, _Value}) ->

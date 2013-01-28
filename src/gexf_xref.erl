@@ -297,9 +297,9 @@ module_node(Info, Id, Mod) ->
     try
           inferno_server:module_info(Info, Mod, [title, application_name, behaviours])
     of [Desc, AppName, Behaviours] ->
-        chain(maybe_attribute_value(?NODE_APP_NAME_ATTR_ID, AppName),
+        chain(maybe_attribute_value(?NODE_TITLE_ATTR_ID, Desc),
+              maybe_attribute_value(?NODE_APP_NAME_ATTR_ID, AppName),
               maybe_attribute_value(?NODE_APP_COLOR_ATTR_ID, maybe_app_color(AppName)),
-              maybe_attribute_value(?NODE_TITLE_ATTR_ID, Desc),
               %% For each behaviour, set behaviours[] = BehName.
               add_behaviours_attribute(Behaviours)
               -- Node)
