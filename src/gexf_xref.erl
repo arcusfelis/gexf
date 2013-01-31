@@ -17,11 +17,12 @@
 -define(EDGE_TITLE_ATTR_ID, 1).
 
 -define(NODE_LINE_NUM_ATTR_ID, 2).
--define(MFA_NODE_TYPE_ATTR_ID, 3).
+-define(NODE_IS_EXPORTED_FN_ATTR_ID, 3).
 -define(NODE_APP_NAME_ATTR_ID, 4).
 -define(NODE_APP_COLOR_ATTR_ID, 5).
 
 -define(NODE_BEHAVIOUR_ATTR_ID, 6).
+-define(NODE_IS_TEST_ATTR_ID, 7).
 
 
 module_colors(Mods) ->
@@ -255,11 +256,11 @@ generate(Xref, Info) ->
     NAttrs = [gexf:attribute_metadata(?NODE_TYPE_ATTR_ID, "node_type", "string")
              ,gexf:attribute_metadata(?NODE_TITLE_ATTR_ID, "node_title", "string")
              ,gexf:attribute_metadata(?NODE_LINE_NUM_ATTR_ID, "line_num", "integer")
-             ,gexf:attribute_metadata(?MFA_NODE_TYPE_ATTR_ID, "is_exported", "boolean")
+             ,gexf:attribute_metadata(?NODE_IS_EXPORTED_FN_ATTR_ID, "is_exported", "boolean")
              ,gexf:attribute_metadata(?NODE_APP_NAME_ATTR_ID, "app_name", "string")
              ,gexf:attribute_metadata(?NODE_APP_COLOR_ATTR_ID, "app_color", "string")
              ,gexf:attribute_metadata(?NODE_BEHAVIOUR_ATTR_ID, "behaviours[]", "string")
-
+             ,gexf:attribute_metadata(?NODE_IS_TEST_ATTR_ID, "is_test", "string")
              ],
     EAttrs = [gexf:attribute_metadata(?EDGE_TYPE_ATTR_ID, "edge_type", "string")
              ,gexf:attribute_metadata(?EDGE_TITLE_ATTR_ID, "edge_title", "string")],
@@ -274,14 +275,15 @@ mfa_to_module({M, _F, _A}) -> M.
 mfa_node(Info, Id, IsExported, MFA) ->
     Node =
     chain(gexf:add_attribute_value(?NODE_TYPE_ATTR_ID, mfa),
-          add_default_attribute_value(?MFA_NODE_TYPE_ATTR_ID, IsExported, false),
+          add_default_attribute_value(?NODE_IS_EXPORTED_FN_ATTR_ID, IsExported, false),
           gexf:set_label(mfa_to_string(MFA))
           -- gexf:node(Id)),
     try
-        inferno_server:function_info(Info, MFA, [title, position, behaviours])
-    of [Desc, LineNum, Behaviours] ->
+        inferno_server:function_info(Info, MFA, [title, position, behaviours, is_test])
+    of [Desc, LineNum, Behaviours, IsTest] ->
         chain(maybe_attribute_value(?NODE_TITLE_ATTR_ID, Desc),
               gexf:add_attribute_value(?NODE_LINE_NUM_ATTR_ID, LineNum),
+              gexf:add_attribute_value(?NODE_IS_TEST_ATTR_ID, IsTest),
               add_behaviours_attribute(Behaviours) -- Node)
     catch error:_Reason ->
         Node
