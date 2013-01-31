@@ -283,7 +283,7 @@ mfa_node(Info, Id, IsExported, MFA) ->
     of [Desc, LineNum, Behaviours, IsTest] ->
         chain(maybe_attribute_value(?NODE_TITLE_ATTR_ID, Desc),
               gexf:add_attribute_value(?NODE_LINE_NUM_ATTR_ID, LineNum),
-              gexf:add_attribute_value(?NODE_IS_TEST_ATTR_ID, IsTest),
+              add_default_attribute_value(?NODE_IS_TEST_ATTR_ID, IsTest, false),
               add_behaviours_attribute(Behaviours) -- Node)
     catch error:_Reason ->
         Node
